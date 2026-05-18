@@ -1,8 +1,6 @@
 import { test, expect } from '@playwright/test'
 import path from 'path'
-import { fileURLToPath } from 'url'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const SRT_FIXTURE = path.join(__dirname, '../fixtures/sample.srt')
 
 let projectId: string
