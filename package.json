@@ -15,7 +15,9 @@
     "clean": "turbo clean && rm -rf node_modules",
     "android:sync": "pnpm --filter @elegant-tide/mobile sync",
     "android:open": "pnpm --filter @elegant-tide/mobile open:android",
-    "android:build": "pnpm --filter @elegant-tide/mobile build"
+    "android:build": "pnpm --filter @elegant-tide/mobile build",
+    "e2e": "pnpm --filter @elegant-tide/e2e test",
+    "e2e:ui": "pnpm --filter @elegant-tide/e2e test:ui"
   },
   "devDependencies": {
     "turbo": "^2.5.4",

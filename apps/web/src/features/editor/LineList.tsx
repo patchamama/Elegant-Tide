@@ -95,7 +95,7 @@ export function LineList({ lines, languages, primaryLang, projectId }: LineListP
       onDragEnd={handleDragEnd}
     >
       <SortableContext items={lines.map((l) => l.id)} strategy={verticalListSortingStrategy}>
-        <div ref={parentRef} className="h-full overflow-auto">
+        <div ref={parentRef} data-testid="line-list" className="h-full overflow-auto">
           <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
             {virtualizer.getVirtualItems().map((vItem) => {
               const line = lines[vItem.index]

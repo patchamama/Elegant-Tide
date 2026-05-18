@@ -135,6 +135,7 @@ export function LineRow({
     <div
       ref={setNodeRef}
       style={style}
+      data-testid="line-row"
       className={clsx(
         'group flex items-start gap-1 px-3 py-2 border-b transition-colors',
         rowBg,

@@ -279,6 +279,7 @@ export function ControlPage() {
               {visibleLines.map((line, idx) => (
                 <button
                   key={line.id}
+                  data-testid="cue-line"
                   onClick={() => handleGoto(line.id)}
                   className={clsx(
                     'w-full text-left px-6 py-4 border-b border-slate-800/60 transition-all',

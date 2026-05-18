@@ -124,6 +124,7 @@ export function ProjectorPage() {
               maxWidth: '90vw',
               whiteSpace: 'pre-wrap',
             }}
+            data-testid="projector-text"
           >
             {text}
           </div>

@@ -1,0 +1,19 @@
+1
+00:00:01,000 --> 00:00:04,000
+Welcome to the elegant-tide test production.
+
+2
+00:00:05,000 --> 00:00:08,500
+This is the second subtitle line.
+
+3
+00:00:09,000 --> 00:00:12,000
+Third line for the import test.
+
+4
+00:00:13,000 --> 00:00:16,000
+Fourth subtitle to verify ordering.
+
+5
+00:00:17,000 --> 00:00:20,000
+Final line of the test SRT file.
