@@ -16,7 +16,9 @@ import {
 import { LineList } from './LineList'
 import { ImportDialog } from './ImportDialog'
 import { useState } from 'react'
-import type { LangCode } from '@elegant-tide/core-types'
+import type { LangCode, SubtitleProject, ProjectionStyle } from '@elegant-tide/core-types'
+import { DEFAULT_PROJECTION_STYLE } from '@elegant-tide/core-types'
+import { X } from 'lucide-react'
 
 const ALL_LANGS: { code: LangCode; label: string }[] = [
   { code: 'en', label: 'English' },
@@ -35,6 +37,7 @@ export function EditorPage() {
   const { addLine } = useEditorStore()
   const [showImport, setShowImport] = useState(false)
   const [showLangPicker, setShowLangPicker] = useState(false)
+  const [showProjectSettings, setShowProjectSettings] = useState(false)
 
   // Live queries — react instantly to DB changes
   const project = useLiveQuery(() => db.projects.get(projectId), [projectId])
@@ -131,6 +134,14 @@ export function EditorPage() {
         </div>
 
         <button
+          onClick={() => setShowProjectSettings(true)}
+          className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+          title="Project settings"
+        >
+          <Settings size={15} />
+        </button>
+
+        <button
           onClick={() => setShowImport(true)}
           className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-slate-800 border border-slate-700 transition-colors"
         >
@@ -191,6 +202,153 @@ export function EditorPage() {
           onClose={() => setShowImport(false)}
         />
       )}
+
+      {/* Project settings dialog */}
+      {showProjectSettings && (
+        <ProjectSettingsDialog
+          project={project}
+          onClose={() => setShowProjectSettings(false)}
+          onSave={async (patch) => { await updateProject({ id: projectId, ...patch }); setShowProjectSettings(false) }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Project Settings Dialog ───────────────────────────────────────────────────
+
+interface ProjectSettingsDialogProps {
+  project: SubtitleProject
+  onClose: () => void
+  onSave: (patch: Partial<SubtitleProject>) => Promise<void>
+}
+
+function ProjectSettingsDialog({ project, onClose, onSave }: ProjectSettingsDialogProps) {
+  const [name, setName] = useState(project.name)
+  const [description, setDescription] = useState(project.description ?? '')
+  const [primaryLang, setPrimaryLang] = useState<LangCode>(project.primaryLanguage)
+  const [style, setStyle] = useState<ProjectionStyle>({ ...DEFAULT_PROJECTION_STYLE, ...project.defaultStyle })
+
+  const handleSave = () => {
+    const patch: Partial<SubtitleProject> = {
+      name: name.trim() || project.name,
+      primaryLanguage: primaryLang,
+      defaultStyle: style,
+    }
+    const trimmedDesc = description.trim()
+    if (trimmedDesc) patch.description = trimmedDesc
+    void onSave(patch)
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+          <h2 className="font-semibold text-white">Project Settings</h2>
+          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto px-6 py-5 space-y-5 flex-1">
+          <label className="block">
+            <span className="text-xs text-slate-400 block mb-1">Project name</span>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-brand-600"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-xs text-slate-400 block mb-1">Description (optional)</span>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-brand-600 resize-none"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-xs text-slate-400 block mb-1">Primary language (source for translation)</span>
+            <select
+              value={primaryLang}
+              onChange={(e) => setPrimaryLang(e.target.value as LangCode)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white outline-none"
+            >
+              {(project.languages as LangCode[]).map((lang) => (
+                <option key={lang} value={lang} className="bg-slate-900">{lang.toUpperCase()}</option>
+              ))}
+            </select>
+          </label>
+
+          <hr className="border-slate-800" />
+          <p className="text-xs text-slate-500 uppercase tracking-wider">Default projection style</p>
+
+          <label className="block">
+            <span className="text-xs text-slate-400 block mb-1">Font size: {style.fontSizePx}px</span>
+            <input
+              type="range" min={16} max={120} step={2}
+              value={style.fontSizePx}
+              onChange={(e) => setStyle((s) => ({ ...s, fontSizePx: Number(e.target.value) }))}
+              className="w-full accent-brand-500"
+            />
+          </label>
+
+          <div className="flex gap-4">
+            <label className="flex-1">
+              <span className="text-xs text-slate-400 block mb-1">Text color</span>
+              <input
+                type="color"
+                value={style.textColor.startsWith('#') ? style.textColor : '#ffffff'}
+                onChange={(e) => setStyle((s) => ({ ...s, textColor: e.target.value }))}
+                className="w-full h-9 rounded-lg cursor-pointer border border-slate-700"
+              />
+            </label>
+            <label className="flex-1">
+              <span className="text-xs text-slate-400 block mb-1">BG color</span>
+              <input
+                type="color"
+                value={style.backgroundColor.startsWith('#') ? style.backgroundColor : '#000000'}
+                onChange={(e) => setStyle((s) => ({ ...s, backgroundColor: e.target.value + 'b3' }))}
+                className="w-full h-9 rounded-lg cursor-pointer border border-slate-700"
+              />
+            </label>
+          </div>
+
+          <div>
+            <span className="text-xs text-slate-400 block mb-1">Text alignment</span>
+            <div className="flex gap-1">
+              {(['left', 'center', 'right'] as const).map((a) => (
+                <button
+                  key={a}
+                  onClick={() => setStyle((s) => ({ ...s, textAlign: a }))}
+                  className={`flex-1 py-2 rounded-lg text-xs capitalize transition-colors ${style.textAlign === a ? 'bg-brand-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+                >
+                  {a}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="px-6 py-4 border-t border-slate-800 flex justify-end gap-3">
+          <button onClick={onClose} className="text-sm text-slate-400 hover:text-white transition-colors px-4 py-2">
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium px-5 py-2 rounded-xl transition-colors"
+          >
+            Save
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

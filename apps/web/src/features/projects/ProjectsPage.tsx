@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useNavigate, Link } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@elegant-tide/db'
@@ -14,6 +14,7 @@ import {
   MonitorPlay,
   Film,
   Globe,
+  Settings,
 } from 'lucide-react'
 import type { SubtitleProject } from '@elegant-tide/core-types'
 
@@ -86,13 +87,22 @@ export function ProjectsPage() {
               <p className="text-xs text-slate-500 mt-0.5">Theater Subtitles</p>
             </div>
           </div>
-          <button
-            onClick={() => setShowCreateDialog(true)}
-            className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors"
-          >
-            <PlusIcon size={16} />
-            {t('projects.new')}
-          </button>
+          <div className="flex items-center gap-2">
+            <Link
+              to="/settings"
+              className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+              title="Settings"
+            >
+              <Settings size={18} />
+            </Link>
+            <button
+              onClick={() => setShowCreateDialog(true)}
+              className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors"
+            >
+              <PlusIcon size={16} />
+              {t('projects.new')}
+            </button>
+          </div>
         </div>
       </header>
 
