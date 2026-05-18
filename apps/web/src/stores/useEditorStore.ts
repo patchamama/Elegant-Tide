@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
-import type { SubtitleLine, LineType, Translations, LangCode } from '@elegant-tide/core-types'
+import type { SubtitleLine, LineType, Translations, LangCode, MediaPayload } from '@elegant-tide/core-types'
 import { linesRepo, midOrder, initialOrder, ORDER_GAP } from '@elegant-tide/db'
 
 interface EditorStore {
@@ -16,6 +16,8 @@ interface EditorStore {
   insertLineBefore: (refId: string, projectId: string) => Promise<SubtitleLine>
   insertLineAfter: (refId: string, projectId: string) => Promise<SubtitleLine>
   updateTranslation: (id: string, lang: LangCode, text: string) => Promise<void>
+  updateComment: (id: string, comment: string) => Promise<void>
+  updateMedia: (id: string, media: MediaPayload) => Promise<void>
   updateLineType: (id: string, type: LineType) => Promise<void>
   deleteLine: (id: string) => Promise<void>
   splitLine: (id: string, lang: LangCode, splitIndex: number) => Promise<void>
@@ -105,6 +107,22 @@ export const useEditorStore = create<EditorStore>()(
         translations: { ...line.translations, [lang]: text },
         updatedAt: Date.now(),
       }
+      await linesRepo.upsert(updated)
+      set((s) => ({ lines: s.lines.map((l) => (l.id === id ? updated : l)) }))
+    },
+
+    updateComment: async (id, comment) => {
+      const line = get().lines.find((l) => l.id === id)
+      if (!line) return
+      const updated: SubtitleLine = { ...line, comment, updatedAt: Date.now() }
+      await linesRepo.upsert(updated)
+      set((s) => ({ lines: s.lines.map((l) => (l.id === id ? updated : l)) }))
+    },
+
+    updateMedia: async (id, media) => {
+      const line = get().lines.find((l) => l.id === id)
+      if (!line) return
+      const updated: SubtitleLine = { ...line, media, updatedAt: Date.now() }
       await linesRepo.upsert(updated)
       set((s) => ({ lines: s.lines.map((l) => (l.id === id ? updated : l)) }))
     },

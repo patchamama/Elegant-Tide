@@ -1,1 +1,40 @@
-node_modules\ndist\n.turbo\n*.local\n.env\n.env.*\n!.env.example
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Turbo cache
+.turbo/
+
+# Vite
+*.tsbuildinfo
+apps/web/src/routeTree.gen.ts
+
+# Env
+.env
+.env.*
+!.env.example
+*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Electron build
+apps/desktop/release/
+
+# Capacitor native
+apps/mobile/android/
+apps/mobile/ios/
+
+# Engram
+.engram/
