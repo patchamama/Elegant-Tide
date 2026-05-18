@@ -21,10 +21,11 @@ import { LineRowOverlay } from './LineRowOverlay'
 interface LineListProps {
   lines: SubtitleLine[]
   languages: LangCode[]
+  primaryLang: LangCode
   projectId: string
 }
 
-export function LineList({ lines, languages, projectId }: LineListProps) {
+export function LineList({ lines, languages, primaryLang, projectId }: LineListProps) {
   const parentRef = useRef<HTMLDivElement>(null)
   const { selectedIds, reorderLine } = useEditorStore()
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -115,6 +116,7 @@ export function LineList({ lines, languages, projectId }: LineListProps) {
                   <LineRow
                     line={line}
                     languages={languages}
+                    primaryLang={primaryLang}
                     projectId={projectId}
                     isSelected={selectedIds.has(line.id)}
                     index={vItem.index}

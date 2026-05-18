@@ -188,6 +188,7 @@ export function EditorPage() {
           <LineList
             lines={lines}
             languages={project.languages as LangCode[]}
+            primaryLang={project.primaryLanguage as LangCode}
             projectId={projectId}
           />
         )}

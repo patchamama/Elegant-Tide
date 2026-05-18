@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
+import { suggestTranslation } from '@/lib/translateApi'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { SubtitleLine, LangCode, LineType, MediaSourceType } from '@elegant-tide/core-types'
@@ -12,18 +13,20 @@ import {
   Plus,
   Trash2,
   GripVertical,
-  ChevronDown,
   Check,
   X,
   Music,
   Youtube,
   Link,
+  Sparkles,
+  Loader2,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
 interface LineRowProps {
   line: SubtitleLine
   languages: LangCode[]
+  primaryLang: LangCode
   projectId: string
   isSelected: boolean
   index: number
@@ -58,6 +61,7 @@ const MEDIA_SOURCES: { value: MediaSourceType; label: string; Icon: React.Elemen
 export function LineRow({
   line,
   languages,
+  primaryLang,
   projectId,
   isSelected,
   index,
@@ -195,6 +199,7 @@ export function LineRow({
               key={lang}
               line={line}
               lang={lang}
+              primaryLang={primaryLang}
               splitMode={splitMode}
               onTextChange={(text) => void updateTranslation(line.id, lang, text)}
               onEnterSplitMode={() => enterSplitMode(lang)}
@@ -250,6 +255,7 @@ export function LineRow({
 interface SubtitleCellProps {
   line: SubtitleLine
   lang: LangCode
+  primaryLang: LangCode
   splitMode: { lang: LangCode; pos: number } | null
   onTextChange: (text: string) => void
   onEnterSplitMode: () => void
@@ -262,6 +268,7 @@ interface SubtitleCellProps {
 function SubtitleCell({
   line,
   lang,
+  primaryLang,
   splitMode,
   onTextChange,
   onSplitPosChange,
@@ -269,6 +276,19 @@ function SubtitleCell({
   onCancelSplit,
   textareaRef,
 }: SubtitleCellProps) {
+  const [suggesting, setSuggesting] = useState(false)
+
+  const handleSuggest = useCallback(async () => {
+    const sourceText = line.translations[primaryLang]
+    if (!sourceText || lang === primaryLang) return
+    setSuggesting(true)
+    try {
+      const result = await suggestTranslation(sourceText, primaryLang, lang)
+      if (result) onTextChange(result)
+    } finally {
+      setSuggesting(false)
+    }
+  }, [line.translations, primaryLang, lang, onTextChange])
   const text = line.translations[lang] ?? ''
   const isActiveSplit = splitMode?.lang === lang
   const pos = splitMode?.pos ?? 0
@@ -324,7 +344,7 @@ function SubtitleCell({
   }
 
   return (
-    <div className="flex-1 min-w-0">
+    <div className="flex-1 min-w-0 relative group/cell">
       <textarea
         ref={textareaRef}
         value={text}
@@ -341,6 +361,18 @@ function SubtitleCell({
         className="w-full bg-transparent text-slate-100 text-sm resize-none outline-none placeholder-slate-700 focus:bg-slate-800/50 rounded px-1 py-0.5 transition-colors"
         onClick={(e) => e.stopPropagation()}
       />
+      {lang !== primaryLang && !text && (
+        <button
+          onClick={(e) => { e.stopPropagation(); void handleSuggest() }}
+          disabled={suggesting}
+          title="AI translation suggestion"
+          className="absolute bottom-0.5 right-0.5 p-0.5 text-slate-700 hover:text-brand-400 transition-colors opacity-0 group-hover/cell:opacity-100"
+        >
+          {suggesting
+            ? <Loader2 size={11} className="animate-spin" />
+            : <Sparkles size={11} />}
+        </button>
+      )}
     </div>
   )
 }

@@ -8,6 +8,8 @@
       "@elegant-tide/core-types": ["../../packages/core-types/src/index.ts"],
       "@elegant-tide/db": ["../../packages/db/src/index.ts"],
       "@elegant-tide/broadcast-protocol": ["../../packages/broadcast-protocol/src/index.ts"],
+      "@elegant-tide/importers": ["../../packages/importers/src/index.ts"],
+      "@elegant-tide/sync": ["../../packages/sync/src/index.ts"],
       "@/*": ["./src/*"]
     }
   },
