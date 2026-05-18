@@ -10,13 +10,16 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@elegant-tide/core-types": "workspace:*",
     "@elegant-tide/db": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.8.3"
+    "fake-indexeddb": "^6.0.0",
+    "typescript": "^5.8.3",
+    "vitest": "^2.1.8"
   }
 }

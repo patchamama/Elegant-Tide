@@ -157,13 +157,10 @@ Routes available at `http://localhost:5173`:
 ### Backend API (optional)
 
 ```bash
-# 1. Create the env file
-cp servers/api/.env.example servers/api/.env
-# Edit servers/api/.env — see Environment variables below
-
-# 2. Start (runs db push automatically on first run)
+# Start (creates .env from template + runs db push on first run)
 ./start-backend.sh
 # → http://localhost:3001
+# → OpenAPI docs: http://localhost:3001/docs
 ```
 
 ### Electron desktop (dev mode)
@@ -355,6 +352,9 @@ pnpm --filter @elegant-tide/db test
 |---|---|
 | `@elegant-tide/importers` | SRT, VTT, plaintext parsers — 22 tests |
 | `@elegant-tide/db` | Fractional ordering utilities (`midOrder`, `initialOrder`, `needsCompaction`) — 13 tests |
+| `@elegant-tide/sync` | Outbox enqueue, conflict resolution, engine push/pull (with `fake-indexeddb` + mocked `fetch`) — 30 tests |
+
+**Total**: 65 unit tests across three packages.
 
 ### End-to-end (Playwright)
 
@@ -422,7 +422,9 @@ GitHub Actions runs typecheck + unit tests + web build on every push and pull re
 
 - **Capacitor plugins installed but no native file picker wired** — `@capacitor/filesystem` and `@capacitor/preferences` are declared as dependencies. The import dialog uses the standard browser `<input type="file">` (which works inside the WebView) — a Capacitor-specific picker for Documents/Downloads access is still pending.
 
-- **No vitest tests for `packages/sync`** — the sync engine requires Dexie, which needs `fake-indexeddb` to test in Node. Unit-test coverage for outbox/conflict-resolution helpers is still pending.
+- **No integration tests for the backend API** — the routes are typechecked but there are no live tests against a real Postgres or SQLite fixture. Planned via `vitest` + `supertest` + ephemeral Postgres.
+
+- **No ESLint config** — the `lint` task is in `turbo.json` and the web app's `package.json`, but no `eslint.config.js` is checked in. The CI workflow skips lint until the config lands.
 
 - **Google Play signing** — the Android build requires a keystore. This is not automated; it must be done manually in Android Studio or via Fastlane.
 
