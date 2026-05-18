@@ -1,4 +1,4 @@
-import { db, linesRepo } from '@elegant-tide/db'
+import { db, linesRepo, conflictsRepo } from '@elegant-tide/db'
 import type { SubtitleLine } from '@elegant-tide/core-types'
 
 const BATCH_SIZE = 50
@@ -65,11 +65,16 @@ export async function flushOutbox(config: SyncConfig): Promise<void> {
       if (res.ok) {
         const { results } = await res.json() as { results: Array<{ id: string; version: number; conflict: boolean }> }
 
-        // Update local version numbers for non-conflicting writes
+        // Update local version numbers for non-conflicting writes; record conflicts otherwise
         for (const r of results) {
-          if (!r.conflict) {
-            const local = await linesRepo.get(r.id)
-            if (local) await linesRepo.upsert({ ...local, version: r.version })
+          const local = await linesRepo.get(r.id)
+          if (!local) continue
+          if (r.conflict) {
+            await conflictsRepo.record(local)
+          } else {
+            await linesRepo.upsert({ ...local, version: r.version })
+            // If this line had a stale conflict record, clear it
+            await conflictsRepo.clear(r.id)
           }
         }
 
@@ -129,6 +134,14 @@ export async function pullUpdates(config: SyncConfig): Promise<void> {
     const { lines: remoteLines } = await res.json() as { lines: SubtitleLine[]; serverTime: number }
 
     for (const remote of remoteLines) {
+      // If this line has a pending conflict, only update the conflict record —
+      // do NOT overwrite local. User must resolve manually.
+      const conflict = await conflictsRepo.get(remote.id)
+      if (conflict) {
+        await conflictsRepo.setRemote(remote.id, remote)
+        continue
+      }
+
       const local = await linesRepo.get(remote.id)
       // LWW: apply only if remote is newer
       if (!local || remote.updatedAt > local.updatedAt) {

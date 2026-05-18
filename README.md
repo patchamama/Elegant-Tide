@@ -338,6 +338,24 @@ cd servers/api && npx prisma migrate deploy
 
 ## Testing
 
+### Unit tests (Vitest)
+
+```bash
+# Run every package's unit tests via Turbo
+pnpm test
+
+# Or a single package
+pnpm --filter @elegant-tide/importers test
+pnpm --filter @elegant-tide/db test
+```
+
+**Coverage**:
+
+| Package | What it tests |
+|---|---|
+| `@elegant-tide/importers` | SRT, VTT, plaintext parsers — 22 tests |
+| `@elegant-tide/db` | Fractional ordering utilities (`midOrder`, `initialOrder`, `needsCompaction`) — 13 tests |
+
 ### End-to-end (Playwright)
 
 ```bash
@@ -351,8 +369,10 @@ pnpm e2e
 pnpm e2e:ui
 
 # View last HTML report
-pnpm --filter @elegant-tide/e2e test:report
+pnpm --filter @elegant-tide/e2e e2e:report
 ```
+
+E2E tests are **not** part of `pnpm test` — they are slow, require a browser install, and are inherently flaky on shared CI hardware. Run them manually before releases.
 
 **Test suites**:
 
@@ -360,6 +380,10 @@ pnpm --filter @elegant-tide/e2e test:report
 |---|---|
 | `golden-path.spec.ts` | Create project → import SRT → edit line → control panel → projector BroadcastChannel update |
 | `performance.spec.ts` | Seed 2000 lines via IndexedDB → scroll latency < 50ms → projector cue update < 100ms |
+
+### Continuous integration
+
+GitHub Actions runs typecheck + unit tests + web build on every push and pull request — see `.github/workflows/ci.yml`.
 
 ---
 
@@ -396,10 +420,10 @@ pnpm --filter @elegant-tide/e2e test:report
 
 - **Electron auto-update URL** (`https://releases.elegant-tide.com`) is a placeholder. Point it at a real static host before distributing.
 
-- **Capacitor plugins installed but Android platform not initialized** — `@capacitor/filesystem` and `@capacitor/preferences` are declared as dependencies but the platform directory doesn't exist until `cap add android` is run. The file import dialog falls back to the standard browser `<input type="file">` on mobile (which works in WebView) — no Capacitor-specific file picker is wired yet.
+- **Capacitor plugins installed but no native file picker wired** — `@capacitor/filesystem` and `@capacitor/preferences` are declared as dependencies. The import dialog uses the standard browser `<input type="file">` (which works inside the WebView) — a Capacitor-specific picker for Documents/Downloads access is still pending.
 
-- **No unit tests** — the test suite is Playwright e2e only. Vitest unit tests for `packages/importers` and `packages/sync` are planned.
-
-- **No CI pipeline** — a GitHub Actions workflow (typecheck → lint → e2e) is not yet defined.
+- **No vitest tests for `packages/sync`** — the sync engine requires Dexie, which needs `fake-indexeddb` to test in Node. Unit-test coverage for outbox/conflict-resolution helpers is still pending.
 
 - **Google Play signing** — the Android build requires a keystore. This is not automated; it must be done manually in Android Studio or via Fastlane.
+
+- **`servers/api/.env.example`** — the file is not checked in (the repo's permission policy blocks dotfiles in writes); `start-backend.sh` writes a usable `.env` from an inline template on first run instead.

@@ -6,6 +6,7 @@
     "node": ">=20",
     "pnpm": ">=9"
   },
+  "packageManager": "pnpm@11.1.2",
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
@@ -16,8 +17,8 @@
     "android:sync": "pnpm --filter @elegant-tide/mobile sync",
     "android:open": "pnpm --filter @elegant-tide/mobile open:android",
     "android:build": "pnpm --filter @elegant-tide/mobile build",
-    "e2e": "pnpm --filter @elegant-tide/e2e test",
-    "e2e:ui": "pnpm --filter @elegant-tide/e2e test:ui"
+    "e2e": "pnpm --filter @elegant-tide/e2e e2e",
+    "e2e:ui": "pnpm --filter @elegant-tide/e2e e2e:ui"
   },
   "devDependencies": {
     "turbo": "^2.5.4",

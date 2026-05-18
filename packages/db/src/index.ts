@@ -3,6 +3,7 @@ export { projectsRepo } from './repo/projects.ts'
 export { linesRepo } from './repo/lines.ts'
 export { connectivityRepo } from './repo/connectivity.ts'
 export { appConfigRepo } from './repo/appConfig.ts'
+export { conflictsRepo } from './repo/conflicts.ts'
 
 // Fractional index utilities
 export const ORDER_GAP = 1024

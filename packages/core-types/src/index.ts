@@ -129,6 +129,16 @@ export interface OutboxEntry {
   lastAttemptAt?: number
 }
 
+// ─── Sync conflicts ──────────────────────────────────────────────────────────
+
+export interface SyncConflict {
+  id: string              // line id — one conflict per line at a time
+  projectId: string
+  localLine: SubtitleLine
+  remoteLine: SubtitleLine | null  // populated by pull worker
+  detectedAt: number
+}
+
 // ─── Connectivity guard ──────────────────────────────────────────────────────
 
 export interface ConnectivityRecord {

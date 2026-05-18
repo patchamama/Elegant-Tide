@@ -10,15 +10,32 @@ echo "  ║     Elegant Tide — Backend API       ║"
 echo "  ╚══════════════════════════════════════╝"
 echo ""
 
-# Require .env
+# Create .env from inline template on first run
 if [ ! -f "$API_DIR/.env" ]; then
-  echo "  [SETUP] No .env found in servers/api/. Creating from example…"
-  cp "$API_DIR/.env.example" "$API_DIR/.env" 2>/dev/null || {
-    echo "  [ERROR] servers/api/.env.example not found."
-    echo "          Create servers/api/.env with DATABASE_URL, JWT_SECRET, JWT_REFRESH_SECRET"
-    exit 1
-  }
-  echo "  [SETUP] Copied .env.example → .env. Edit it before production use."
+  echo "  [SETUP] No .env found in servers/api/. Creating from template…"
+  cat > "$API_DIR/.env" <<'ENVEOF'
+# ─── Database ──────────────────────────────────────────────────────────────────
+DATABASE_URL="postgresql://elegant_tide:password@localhost:5432/elegant_tide"
+
+# ─── JWT secrets ───────────────────────────────────────────────────────────────
+# Generate with:  openssl rand -base64 48
+# Both MUST be at least 32 characters and different from each other
+JWT_SECRET="change-me-min-32-chars-long-secret-1234567890ab"
+JWT_REFRESH_SECRET="change-me-too-min-32-chars-long-secret-67890cdef"
+
+# ─── Server ────────────────────────────────────────────────────────────────────
+PORT=3001
+NODE_ENV=development
+CORS_ORIGIN=http://localhost:5173
+
+# ─── Translation providers (optional) ──────────────────────────────────────────
+# Leave empty to disable. Keys never reach the browser — the backend proxies
+# all translation calls through /translate/deepl|google.
+DEEPL_API_KEY=
+GOOGLE_TRANSLATE_API_KEY=
+ENVEOF
+  echo "  [SETUP] Created servers/api/.env — review and edit before production use."
+  echo ""
 fi
 
 echo "  [INFO] Running Prisma db push (creates tables if needed)…"

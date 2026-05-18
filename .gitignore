@@ -32,6 +32,10 @@ Thumbs.db
 # Electron build
 apps/desktop/release/
 
+# Playwright artifacts
+apps/e2e/playwright-report/
+apps/e2e/test-results/
+
 # Capacitor native
 apps/mobile/android/
 apps/mobile/ios/

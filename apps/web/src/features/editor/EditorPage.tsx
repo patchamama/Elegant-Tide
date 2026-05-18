@@ -12,9 +12,11 @@ import {
   Plus,
   Settings,
   Globe,
+  AlertTriangle,
 } from 'lucide-react'
 import { LineList } from './LineList'
 import { ImportDialog } from './ImportDialog'
+import { ConflictsDrawer } from './ConflictsDrawer'
 import { useState } from 'react'
 import type { LangCode, SubtitleProject, ProjectionStyle } from '@elegant-tide/core-types'
 import { DEFAULT_PROJECTION_STYLE } from '@elegant-tide/core-types'
@@ -38,6 +40,7 @@ export function EditorPage() {
   const [showImport, setShowImport] = useState(false)
   const [showLangPicker, setShowLangPicker] = useState(false)
   const [showProjectSettings, setShowProjectSettings] = useState(false)
+  const [showConflicts, setShowConflicts] = useState(false)
 
   // Live queries — react instantly to DB changes
   const project = useLiveQuery(() => db.projects.get(projectId), [projectId])
@@ -49,6 +52,11 @@ export function EditorPage() {
         .filter((l) => !l.deletedAt)
         .sortBy('order'),
     [projectId],
+  )
+  const conflictCount = useLiveQuery(
+    () => db.conflicts.where('projectId').equals(projectId).count(),
+    [projectId],
+    0,
   )
 
   useEffect(() => {
@@ -133,6 +141,17 @@ export function EditorPage() {
           )}
         </div>
 
+        {conflictCount > 0 && (
+          <button
+            onClick={() => setShowConflicts(true)}
+            className="relative flex items-center gap-1.5 text-xs text-amber-300 hover:text-amber-200 px-3 py-1.5 rounded-lg bg-amber-950/40 hover:bg-amber-950/60 border border-amber-900/50 transition-colors"
+            title={`${conflictCount} sync conflict${conflictCount === 1 ? '' : 's'} pending`}
+          >
+            <AlertTriangle size={13} />
+            <span>{conflictCount}</span>
+          </button>
+        )}
+
         <button
           onClick={() => setShowProjectSettings(true)}
           className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
@@ -201,6 +220,15 @@ export function EditorPage() {
           languages={project.languages as LangCode[]}
           primaryLanguage={project.primaryLanguage}
           onClose={() => setShowImport(false)}
+        />
+      )}
+
+      {/* Conflicts drawer */}
+      {showConflicts && (
+        <ConflictsDrawer
+          projectId={projectId}
+          languages={project.languages as LangCode[]}
+          onClose={() => setShowConflicts(false)}
         />
       )}
 

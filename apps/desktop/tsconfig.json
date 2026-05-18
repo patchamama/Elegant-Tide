@@ -5,6 +5,9 @@
     "module": "CommonJS",
     "moduleResolution": "Node",
     "allowImportingTsExtensions": false,
+    "verbatimModuleSyntax": false,
+    "esModuleInterop": true,
+    "exactOptionalPropertyTypes": false,
     "noEmit": true,
     "lib": ["ES2022"],
     "types": ["node"]

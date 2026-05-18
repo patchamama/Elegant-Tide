@@ -11,7 +11,9 @@ export function openProjectorWindow(projectId: string, displayId?: number): void
     return
   }
   if (isElectron && window.elegantTide) {
-    void window.elegantTide.openProjector({ id: projectId, displayId })
+    const opts: { id: string; displayId?: number } = { id: projectId }
+    if (displayId !== undefined) opts.displayId = displayId
+    void window.elegantTide.openProjector(opts)
   } else {
     window.open(`/projector/${projectId}`, '_blank', 'popup,width=1280,height=720')
   }

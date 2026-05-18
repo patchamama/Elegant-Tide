@@ -6,3 +6,4 @@ export {
   enqueueProjectDelete,
   pendingCount,
 } from './outbox.ts'
+export { resolveKeepLocal, resolveKeepRemote } from './conflicts.ts'
