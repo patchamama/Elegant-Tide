@@ -7,6 +7,7 @@ import { useProjectionStore } from '@/stores/useProjectionStore'
 import { createBus, type Bus } from '@elegant-tide/broadcast-protocol'
 import type { LangCode, ProjectorWindowConfig, ProjectionStyle } from '@elegant-tide/core-types'
 import { DEFAULT_PROJECTION_STYLE } from '@elegant-tide/core-types'
+import { openProjectorWindow as platformOpenProjector } from '@/lib/platform'
 import {
   ArrowLeft, ChevronLeft, ChevronRight, EyeOff, ExternalLink,
   Monitor, Pause, Plus, Trash2, Settings,
@@ -124,7 +125,7 @@ export function ControlPage() {
   }, [project])
 
   const openProjectorWindow = useCallback((cfg: ProjectorWindowConfig) => {
-    window.open(`/projector/${projectId}`, '_blank', 'popup,width=1280,height=720')
+    platformOpenProjector(projectId)
     // Mark open
     setWindowConfigs((prev) => prev.map((w) => w.id === cfg.id ? { ...w, isOpen: true } : w))
     // Send config after a tiny delay (window needs to mount and listen first)
