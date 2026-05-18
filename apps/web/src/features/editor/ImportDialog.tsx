@@ -1,5 +1,22 @@
+import { useCallback, useRef, useState } from 'react'
 import type { LangCode } from '@elegant-tide/core-types'
-import { X } from 'lucide-react'
+import { linesRepo } from '@elegant-tide/db'
+import { importFile, detectFormat } from '@elegant-tide/importers'
+import type { ImportResult } from '@elegant-tide/importers'
+import { useEditorStore } from '@/stores/useEditorStore'
+import { AlertCircle, FileUp, X } from 'lucide-react'
+import { clsx } from 'clsx'
+
+const LANG_LABELS: Record<LangCode, string> = {
+  en: 'English',
+  es: 'Español',
+  de: 'Deutsch',
+  fr: 'Français',
+  it: 'Italiano',
+  pt: 'Português',
+}
+
+const FORMAT_ACCEPT = '.srt,.vtt,.docx,.pdf,.txt'
 
 interface ImportDialogProps {
   projectId: string
@@ -8,12 +25,63 @@ interface ImportDialogProps {
   onClose: () => void
 }
 
-// Phase 3 will implement actual parsers (SRT/VTT/DOCX/PDF)
-export function ImportDialog({ onClose }: ImportDialogProps) {
+type Step = 'pick' | 'preview' | 'importing' | 'done'
+
+export function ImportDialog({ projectId, languages, primaryLanguage, onClose }: ImportDialogProps) {
+  const [step, setStep] = useState<Step>('pick')
+  const [dragOver, setDragOver] = useState(false)
+  const [file, setFile] = useState<File | null>(null)
+  const [targetLang, setTargetLang] = useState<LangCode>(primaryLanguage)
+  const [result, setResult] = useState<ImportResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const { loadLines } = useEditorStore()
+
+  const handleFile = useCallback(async (f: File) => {
+    setFile(f)
+    setError(null)
+    setStep('preview')
+    try {
+      const res = await importFile(f, { projectId, targetLang })
+      setResult(res)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      setStep('pick')
+    }
+  }, [projectId, targetLang])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(false)
+    const f = e.dataTransfer.files[0]
+    if (f) void handleFile(f)
+  }, [handleFile])
+
+  const handleConfirm = useCallback(async () => {
+    if (!result) return
+    setStep('importing')
+    try {
+      // Re-parse with the selected language in case user changed it after preview
+      const res = file ? await importFile(file, { projectId, targetLang }) : result
+      for (const line of res.lines) {
+        await linesRepo.upsert(line)
+      }
+      await loadLines(projectId)
+      setStep('done')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      setStep('preview')
+    }
+  }, [result, file, projectId, targetLang, loadLines])
+
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl">
-        <div className="flex items-center justify-between mb-4">
+    <div
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 flex-shrink-0">
           <h2 className="font-semibold text-white">Import Script</h2>
           <button
             onClick={onClose}
@@ -22,10 +90,174 @@ export function ImportDialog({ onClose }: ImportDialogProps) {
             <X size={16} />
           </button>
         </div>
-        <p className="text-slate-400 text-sm">
-          Import coming in Phase 3. Supported formats: SRT, VTT, DOCX, PDF.
-        </p>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+
+          {/* Step: pick */}
+          {(step === 'pick') && (
+            <>
+              {/* Drop zone */}
+              <div
+                onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleDrop}
+                onClick={() => inputRef.current?.click()}
+                className={clsx(
+                  'border-2 border-dashed rounded-xl p-10 flex flex-col items-center justify-center gap-3 cursor-pointer transition-colors select-none',
+                  dragOver
+                    ? 'border-brand-500 bg-brand-950/20'
+                    : 'border-slate-700 hover:border-slate-500 hover:bg-slate-800/30',
+                )}
+              >
+                <FileUp size={32} className="text-slate-500" />
+                <p className="text-slate-300 text-sm font-medium">Drop file here or click to browse</p>
+                <p className="text-slate-600 text-xs">SRT · VTT · DOCX · PDF · TXT</p>
+                <input
+                  ref={inputRef}
+                  type="file"
+                  accept={FORMAT_ACCEPT}
+                  className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f) }}
+                />
+              </div>
+
+              {error && (
+                <div className="flex items-start gap-2 text-red-400 text-sm bg-red-950/30 border border-red-900/40 rounded-lg px-3 py-2">
+                  <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+                  {error}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Step: preview */}
+          {(step === 'preview' || step === 'importing') && result && (
+            <>
+              {/* File info */}
+              <div className="flex items-center gap-3 text-sm">
+                <span className="text-slate-400 truncate flex-1">{file?.name}</span>
+                <span className="bg-slate-800 text-slate-400 px-2 py-0.5 rounded text-xs uppercase tracking-wider">
+                  {detectFormat(file?.name ?? '')}
+                </span>
+                <span className="text-slate-400">{result.lines.length} lines</span>
+              </div>
+
+              {/* Language picker */}
+              <div className="flex items-center gap-3">
+                <label className="text-sm text-slate-400 flex-shrink-0">Import as language:</label>
+                <select
+                  value={targetLang}
+                  onChange={(e) => setTargetLang(e.target.value as LangCode)}
+                  className="bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-1.5 outline-none"
+                >
+                  {languages.map((lang) => (
+                    <option key={lang} value={lang}>{LANG_LABELS[lang]}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Warnings */}
+              {result.warnings.length > 0 && (
+                <div className="space-y-1">
+                  {result.warnings.map((w, i) => (
+                    <div key={i} className="flex items-start gap-2 text-amber-400 text-xs bg-amber-950/20 border border-amber-900/30 rounded-lg px-3 py-1.5">
+                      <AlertCircle size={12} className="mt-0.5 flex-shrink-0" />
+                      {w}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Preview table */}
+              <div className="border border-slate-800 rounded-xl overflow-hidden">
+                <div className="max-h-72 overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-800 sticky top-0">
+                      <tr>
+                        <th className="text-left px-3 py-2 text-slate-400 font-medium w-10">#</th>
+                        <th className="text-left px-3 py-2 text-slate-400 font-medium">Text</th>
+                        {result.lines[0]?.timecode && (
+                          <th className="text-left px-3 py-2 text-slate-400 font-medium w-32">Timecode</th>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.lines.slice(0, 200).map((line, i) => (
+                        <tr key={line.id} className={clsx(i % 2 === 0 ? 'bg-transparent' : 'bg-slate-800/30')}>
+                          <td className="px-3 py-1.5 text-slate-600 tabular-nums">{i + 1}</td>
+                          <td className="px-3 py-1.5 text-slate-200 whitespace-pre-wrap break-words">
+                            {line.translations[targetLang] ?? ''}
+                          </td>
+                          {line.timecode && (
+                            <td className="px-3 py-1.5 text-slate-500 text-xs tabular-nums whitespace-nowrap">
+                              {formatMs(line.timecode.startMs)}
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {result.lines.length > 200 && (
+                    <p className="text-center text-slate-600 text-xs py-2">
+                      …and {result.lines.length - 200} more lines
+                    </p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Step: done */}
+          {step === 'done' && (
+            <div className="text-center py-8">
+              <p className="text-slate-300 font-medium">Import complete!</p>
+              <p className="text-slate-500 text-sm mt-1">{result?.lines.length} lines added to your project.</p>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-slate-800 flex-shrink-0 flex items-center justify-between gap-3">
+          {step === 'preview' && (
+            <>
+              <button
+                onClick={() => { setStep('pick'); setResult(null); setFile(null) }}
+                className="text-sm text-slate-400 hover:text-white transition-colors"
+              >
+                Choose different file
+              </button>
+              <button
+                onClick={() => void handleConfirm()}
+                disabled={step !== 'preview'}
+                className="bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium px-5 py-2 rounded-xl transition-colors disabled:opacity-50"
+              >
+                Import {result?.lines.length} lines
+              </button>
+            </>
+          )}
+          {step === 'importing' && (
+            <span className="text-sm text-slate-400 mx-auto">Saving to database…</span>
+          )}
+          {(step === 'pick' || step === 'done') && (
+            <button
+              onClick={onClose}
+              className="ml-auto text-sm text-slate-400 hover:text-white transition-colors"
+            >
+              {step === 'done' ? 'Close' : 'Cancel'}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )
+}
+
+function formatMs(ms: number): string {
+  const totalSec = Math.floor(ms / 1000)
+  const h = Math.floor(totalSec / 3600)
+  const m = Math.floor((totalSec % 3600) / 60)
+  const s = totalSec % 60
+  const msRem = ms % 1000
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(msRem).padStart(3, '0')}`
 }
