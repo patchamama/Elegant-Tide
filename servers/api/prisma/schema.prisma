@@ -1,0 +1,78 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  displayName  String
+  avatarUrl    String?
+  passwordHash String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  projects     Project[]
+  collaborations Collaborator[]
+}
+
+model Project {
+  id               String        @id @default(cuid())
+  name             String
+  description      String?
+  languages        String[]      // LangCode[]
+  primaryLanguage  String
+  defaultStyle     Json          // ProjectionStyle
+  projectorWindows Json          // ProjectorWindowConfig[]
+  ownerId          String
+  owner            User          @relation(fields: [ownerId], references: [id])
+  collaborators    Collaborator[]
+  lines            Line[]
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  version          Int           @default(0)
+  deletedAt        DateTime?
+}
+
+model Collaborator {
+  id        String   @id @default(cuid())
+  userId    String
+  projectId String
+  role      String   // 'author' | 'translator' | 'viewer'
+  addedAt   DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+  project   Project  @relation(fields: [projectId], references: [id])
+
+  @@unique([userId, projectId])
+}
+
+model Line {
+  id           String    @id @default(cuid())
+  projectId    String
+  project      Project   @relation(fields: [projectId], references: [id])
+  type         String    // 'subtitle' | 'comment' | 'media'
+  order        Float
+  translations Json      // Partial<Record<LangCode, string>>
+  comment      String?
+  media        Json?     // MediaPayload
+  timecode     Json?     // { startMs, endMs }
+  updatedAt    DateTime  @updatedAt
+  updatedBy    String    // userId or 'local'
+  version      Int       @default(0)
+  deletedAt    DateTime?
+
+  @@index([projectId, order])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}

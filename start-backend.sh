@@ -2,26 +2,29 @@
 set -e
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
+API_DIR="$ROOT/servers/api"
 
 echo ""
 echo "  ╔══════════════════════════════════════╗"
 echo "  ║     Elegant Tide — Backend API       ║"
 echo "  ╚══════════════════════════════════════╝"
 echo ""
-echo "  ⚠  Backend not implemented yet (Phase 7)."
+
+# Require .env
+if [ ! -f "$API_DIR/.env" ]; then
+  echo "  [SETUP] No .env found in servers/api/. Creating from example…"
+  cp "$API_DIR/.env.example" "$API_DIR/.env" 2>/dev/null || {
+    echo "  [ERROR] servers/api/.env.example not found."
+    echo "          Create servers/api/.env with DATABASE_URL, JWT_SECRET, JWT_REFRESH_SECRET"
+    exit 1
+  }
+  echo "  [SETUP] Copied .env.example → .env. Edit it before production use."
+fi
+
+echo "  [INFO] Running Prisma db push (creates tables if needed)…"
+cd "$API_DIR"
+pnpm db:push --skip-generate 2>/dev/null || echo "  [WARN] db:push failed — check DATABASE_URL in servers/api/.env"
+
+echo "  [INFO] Starting Fastify API on port \${PORT:-3001}…"
 echo ""
-echo "  The frontend runs fully offline without a backend."
-echo "  All project data is stored in IndexedDB (Dexie)."
-echo ""
-echo "  What backend will add (Phase 7+):"
-echo "    - Auth: POST /auth/login, /auth/refresh"
-echo "    - Projects: CRUD + multi-user access"
-echo "    - Sync: GET /sync/pull, POST /sync/push, GET /sync/ping"
-echo "    - Translation proxy: /translate/deepl, /translate/google"
-echo ""
-echo "  Stack: Fastify + Prisma + PostgreSQL"
-echo "  Entry: servers/api/src/server.ts"
-echo ""
-echo "  For now, just run:"
-echo "    bash start-frontend.sh"
-echo ""
+pnpm dev
