@@ -4,6 +4,15 @@ import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { routeTree } from './routeTree.gen'
 import '@/styles/globals.css'
 import '@/i18n'
+import { appConfigRepo } from '@elegant-tide/db'
+import { startSyncWorker } from '@elegant-tide/sync'
+
+// Start background sync if a backend URL is configured
+appConfigRepo.get().then((cfg) => {
+  if (cfg.backendUrl) {
+    startSyncWorker({ backendUrl: cfg.backendUrl })
+  }
+})
 
 const router = createRouter({ routeTree })
 

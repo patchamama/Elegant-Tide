@@ -218,6 +218,19 @@ importers:
         specifier: ^5.8.3
         version: 5.9.3
 
+  packages/sync:
+    dependencies:
+      '@elegant-tide/core-types':
+        specifier: workspace:*
+        version: link:../core-types
+      '@elegant-tide/db':
+        specifier: workspace:*
+        version: link:../db
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+
   servers/api:
     dependencies:
       '@elegant-tide/core-types':

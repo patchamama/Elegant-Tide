@@ -43,6 +43,8 @@ export default defineConfig({
         __dirname,
         '../../packages/broadcast-protocol/src/index.ts',
       ),
+      '@elegant-tide/sync': resolve(__dirname, '../../packages/sync/src/index.ts'),
+      '@elegant-tide/importers': resolve(__dirname, '../../packages/importers/src/index.ts'),
     },
   },
   optimizeDeps: {
