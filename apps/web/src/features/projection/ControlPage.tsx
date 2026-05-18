@@ -7,7 +7,7 @@ import { useProjectionStore } from '@/stores/useProjectionStore'
 import { createBus, type Bus } from '@elegant-tide/broadcast-protocol'
 import type { LangCode, ProjectorWindowConfig, ProjectionStyle } from '@elegant-tide/core-types'
 import { DEFAULT_PROJECTION_STYLE } from '@elegant-tide/core-types'
-import { openProjectorWindow as platformOpenProjector } from '@/lib/platform'
+import { openProjectorWindow as platformOpenProjector, isCapacitor } from '@/lib/platform'
 import {
   ArrowLeft, ChevronLeft, ChevronRight, EyeOff, ExternalLink,
   Monitor, Pause, Plus, Trash2, Settings,
@@ -387,13 +387,15 @@ export function ControlPage() {
                       <p className="text-sm text-white truncate">{cfg.label}</p>
                       <p className="text-xs text-slate-500">{LANG_LABELS[cfg.language]}</p>
                     </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); openProjectorWindow(cfg) }}
-                      title="Open projector window"
-                      className="p-1.5 text-slate-500 hover:text-brand-400 transition-colors"
-                    >
-                      <ExternalLink size={13} />
-                    </button>
+                    {!isCapacitor && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); openProjectorWindow(cfg) }}
+                        title="Open projector window"
+                        className="p-1.5 text-slate-500 hover:text-brand-400 transition-colors"
+                      >
+                        <ExternalLink size={13} />
+                      </button>
+                    )}
                     <button
                       onClick={(e) => { e.stopPropagation(); removeWindow(cfg.id) }}
                       title="Remove window"
@@ -552,15 +554,17 @@ export function ControlPage() {
                   <span className="text-sm text-slate-300">Play media cues in this window</span>
                 </label>
 
-                <div className="pt-2">
-                  <button
-                    onClick={() => openProjectorWindow(editingWindow)}
-                    className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors"
-                  >
-                    <ExternalLink size={14} />
-                    Open {editingWindow.label}
-                  </button>
-                </div>
+                {!isCapacitor && (
+                  <div className="pt-2">
+                    <button
+                      onClick={() => openProjectorWindow(editingWindow)}
+                      className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors"
+                    >
+                      <ExternalLink size={14} />
+                      Open {editingWindow.label}
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="flex-1 flex items-center justify-center">

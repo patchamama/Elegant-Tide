@@ -12,7 +12,10 @@
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
     "test": "turbo test",
-    "clean": "turbo clean && rm -rf node_modules"
+    "clean": "turbo clean && rm -rf node_modules",
+    "android:sync": "pnpm --filter @elegant-tide/mobile sync",
+    "android:open": "pnpm --filter @elegant-tide/mobile open:android",
+    "android:build": "pnpm --filter @elegant-tide/mobile build"
   },
   "devDependencies": {
     "turbo": "^2.5.4",
