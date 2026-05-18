@@ -1,0 +1,1 @@
+node_modules\ndist\n.turbo\n*.local\n.env\n.env.*\n!.env.example

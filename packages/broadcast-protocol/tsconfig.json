@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "paths": {
+      "@elegant-tide/core-types": ["../core-types/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

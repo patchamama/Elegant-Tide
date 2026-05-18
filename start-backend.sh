@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -e
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+echo ""
+echo "  ╔══════════════════════════════════════╗"
+echo "  ║     Elegant Tide — Backend API       ║"
+echo "  ╚══════════════════════════════════════╝"
+echo ""
+echo "  ⚠  Backend not implemented yet (Phase 7)."
+echo ""
+echo "  The frontend runs fully offline without a backend."
+echo "  All project data is stored in IndexedDB (Dexie)."
+echo ""
+echo "  What backend will add (Phase 7+):"
+echo "    - Auth: POST /auth/login, /auth/refresh"
+echo "    - Projects: CRUD + multi-user access"
+echo "    - Sync: GET /sync/pull, POST /sync/push, GET /sync/ping"
+echo "    - Translation proxy: /translate/deepl, /translate/google"
+echo ""
+echo "  Stack: Fastify + Prisma + PostgreSQL"
+echo "  Entry: servers/api/src/server.ts"
+echo ""
+echo "  For now, just run:"
+echo "    bash start-frontend.sh"
+echo ""

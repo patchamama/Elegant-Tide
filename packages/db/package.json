@@ -1,0 +1,22 @@
+{
+  "name": "@elegant-tide/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@elegant-tide/core-types": "workspace:*",
+    "dexie": "^4.0.10"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

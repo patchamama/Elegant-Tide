@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@elegant-tide/core-types": ["../../packages/core-types/src/index.ts"],
+      "@elegant-tide/db": ["../../packages/db/src/index.ts"],
+      "@elegant-tide/broadcast-protocol": ["../../packages/broadcast-protocol/src/index.ts"],
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src", "vite.config.ts"],
+  "exclude": ["src/service-worker.ts"]
+}
