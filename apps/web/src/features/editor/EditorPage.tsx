@@ -35,7 +35,7 @@ export function EditorPage() {
   const { t } = useTranslation()
   const { projectId } = useParams({ from: '/editor/$projectId' })
   const navigate = useNavigate()
-  const { currentProject, loadProject, updateProject } = useProjectStore()
+  const { loadProject, updateProject } = useProjectStore()
   const { addLine } = useEditorStore()
   const [showImport, setShowImport] = useState(false)
   const [showLangPicker, setShowLangPicker] = useState(false)

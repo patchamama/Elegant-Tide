@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import type { SubtitleLine, LineType, Translations, LangCode, MediaPayload } from '@elegant-tide/core-types'
-import { linesRepo, midOrder, initialOrder, ORDER_GAP } from '@elegant-tide/db'
+import { linesRepo, midOrder, ORDER_GAP } from '@elegant-tide/db'
 
 interface EditorStore {
   lines: SubtitleLine[]

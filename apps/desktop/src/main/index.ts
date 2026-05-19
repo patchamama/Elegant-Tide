@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, screen, safeStorage, shell } from 'electron'
 import { autoUpdater } from 'electron-updater'
+import fs from 'fs'
 import path from 'path'
 
 const isDev = process.env['NODE_ENV'] === 'development'
@@ -105,7 +106,7 @@ ipcMain.handle('dialog:saveFile', async (_event, { defaultName, filters }: { def
 ipcMain.handle('secure:get', (_event, { key }: { key: string }) => {
   if (!safeStorage.isEncryptionAvailable()) return null
   try {
-    const raw = require('fs').readFileSync(path.join(app.getPath('userData'), `${key}.enc`))
+    const raw = fs.readFileSync(path.join(app.getPath('userData'), `${key}.enc`))
     return safeStorage.decryptString(raw)
   } catch {
     return null
@@ -115,13 +116,13 @@ ipcMain.handle('secure:get', (_event, { key }: { key: string }) => {
 ipcMain.handle('secure:set', (_event, { key, value }: { key: string; value: string }) => {
   if (!safeStorage.isEncryptionAvailable()) return false
   const enc = safeStorage.encryptString(value)
-  require('fs').writeFileSync(path.join(app.getPath('userData'), `${key}.enc`), enc)
+  fs.writeFileSync(path.join(app.getPath('userData'), `${key}.enc`), enc)
   return true
 })
 
 ipcMain.handle('secure:delete', (_event, { key }: { key: string }) => {
   try {
-    require('fs').unlinkSync(path.join(app.getPath('userData'), `${key}.enc`))
+    fs.unlinkSync(path.join(app.getPath('userData'), `${key}.enc`))
   } catch {
     // File didn't exist — fine
   }

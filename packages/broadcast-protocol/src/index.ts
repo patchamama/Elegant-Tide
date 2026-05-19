@@ -105,6 +105,7 @@ export function createBus(opts: BusOptions): Bus {
     const set = handlers.get(kind)!
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     set.add(handler as any)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return () => set.delete(handler as any)
   }
 

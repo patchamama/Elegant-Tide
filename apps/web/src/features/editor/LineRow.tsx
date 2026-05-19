@@ -72,7 +72,6 @@ export function LineRow({
     updateTranslation,
     updateLineType,
     deleteLine,
-    insertLineBefore,
     insertLineAfter,
     splitLine,
     joinLines,

@@ -24,7 +24,8 @@ i18n
 // Register lazy backends
 const langs = ['en', 'es', 'de', 'fr', 'it', 'pt'] as const
 langs.forEach((lang) => {
-  i18n.addResourceBundle && void loadLocale(lang)().then((mod) => {
+  if (!i18n.addResourceBundle) return
+  void loadLocale(lang)().then((mod) => {
     i18n.addResourceBundle(lang, 'translation', mod.default, true, true)
   })
 })

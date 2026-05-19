@@ -381,9 +381,21 @@ E2E tests are **not** part of `pnpm test` — they are slow, require a browser i
 | `golden-path.spec.ts` | Create project → import SRT → edit line → control panel → projector BroadcastChannel update |
 | `performance.spec.ts` | Seed 2000 lines via IndexedDB → scroll latency < 50ms → projector cue update < 100ms |
 
+### Linting
+
+```bash
+# Check
+pnpm lint
+
+# Auto-fix what can be fixed
+pnpm lint:fix
+```
+
+ESLint flat config lives at `eslint.config.mjs` — uses `@eslint/js`, `typescript-eslint`, and `eslint-plugin-react-hooks`.
+
 ### Continuous integration
 
-GitHub Actions runs typecheck + unit tests + web build on every push and pull request — see `.github/workflows/ci.yml`.
+GitHub Actions runs lint + typecheck + unit tests + web build on every push and pull request — see `.github/workflows/ci.yml`.
 
 ---
 
@@ -423,8 +435,6 @@ GitHub Actions runs typecheck + unit tests + web build on every push and pull re
 - **Capacitor plugins installed but no native file picker wired** — `@capacitor/filesystem` and `@capacitor/preferences` are declared as dependencies. The import dialog uses the standard browser `<input type="file">` (which works inside the WebView) — a Capacitor-specific picker for Documents/Downloads access is still pending.
 
 - **No integration tests for the backend API** — the routes are typechecked but there are no live tests against a real Postgres or SQLite fixture. Planned via `vitest` + `supertest` + ephemeral Postgres.
-
-- **No ESLint config** — the `lint` task is in `turbo.json` and the web app's `package.json`, but no `eslint.config.js` is checked in. The CI workflow skips lint until the config lands.
 
 - **Google Play signing** — the Android build requires a keystore. This is not automated; it must be done manually in Android Studio or via Fastlane.
 

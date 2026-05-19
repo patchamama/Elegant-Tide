@@ -32,6 +32,9 @@ jobs:
       - name: Generate Prisma client
         run: pnpm --filter @elegant-tide/api db:generate
 
+      - name: Lint
+        run: pnpm lint
+
       - name: Typecheck
         run: pnpm typecheck
 

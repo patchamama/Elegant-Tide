@@ -11,7 +11,8 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "typecheck": "turbo typecheck",
-    "lint": "turbo lint",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "test": "turbo test",
     "clean": "turbo clean && rm -rf node_modules",
     "android:sync": "pnpm --filter @elegant-tide/mobile sync",
@@ -21,8 +22,14 @@
     "e2e:ui": "pnpm --filter @elegant-tide/e2e e2e:ui"
   },
   "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "eslint": "^9.18.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-react-refresh": "^0.4.16",
+    "globals": "^15.14.0",
+    "prettier": "^3.5.3",
     "turbo": "^2.5.4",
     "typescript": "^5.8.3",
-    "prettier": "^3.5.3"
+    "typescript-eslint": "^8.20.0"
   }
 }

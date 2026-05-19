@@ -37,7 +37,7 @@ describe('fractional ordering', () => {
     })
 
     it('repeated halving still yields unique values until precision runs out', () => {
-      let prev = 0
+      const prev = 0
       let next = ORDER_GAP
       for (let i = 0; i < 10; i++) {
         const mid = midOrder(prev, next)
