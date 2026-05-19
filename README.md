@@ -353,8 +353,19 @@ pnpm --filter @elegant-tide/db test
 | `@elegant-tide/importers` | SRT, VTT, plaintext parsers — 22 tests |
 | `@elegant-tide/db` | Fractional ordering utilities (`midOrder`, `initialOrder`, `needsCompaction`) — 13 tests |
 | `@elegant-tide/sync` | Outbox enqueue, conflict resolution, engine push/pull (with `fake-indexeddb` + mocked `fetch`) — 30 tests |
+| `@elegant-tide/api` | `/auth` integration tests (register, login, me, refresh rotation, logout) — 15 tests, requires Postgres |
 
-**Total**: 65 unit tests across three packages.
+**Total**: 80 tests (65 pure unit + 15 integration).
+
+> API integration tests skip automatically unless `DATABASE_URL` contains the substring `test`. To run them locally:
+>
+> ```bash
+> export DATABASE_URL="postgresql://elegant_tide:test_password@localhost:5432/elegant_tide_test"
+> pnpm --filter @elegant-tide/api db:push
+> pnpm --filter @elegant-tide/api test
+> ```
+>
+> The CI workflow spins up a Postgres 16 service container and runs them on every push.
 
 ### End-to-end (Playwright)
 
@@ -434,7 +445,7 @@ GitHub Actions runs lint + typecheck + unit tests + web build on every push and 
 
 - **Capacitor plugins installed but no native file picker wired** — `@capacitor/filesystem` and `@capacitor/preferences` are declared as dependencies. The import dialog uses the standard browser `<input type="file">` (which works inside the WebView) — a Capacitor-specific picker for Documents/Downloads access is still pending.
 
-- **No integration tests for the backend API** — the routes are typechecked but there are no live tests against a real Postgres or SQLite fixture. Planned via `vitest` + `supertest` + ephemeral Postgres.
+- **Backend integration tests cover `/auth` only** — `/sync` push/pull and `/projects` CRUD endpoints are typechecked but not exercised against Postgres yet. Planned in a follow-up.
 
 - **Google Play signing** — the Android build requires a keystore. This is not automated; it must be done manually in Android Studio or via Fastlane.
 

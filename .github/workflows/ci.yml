@@ -8,9 +8,30 @@ on:
 
 jobs:
   typecheck-and-test:
-    name: Typecheck, lint, test
+    name: Lint, typecheck, unit tests, web build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: elegant_tide
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: elegant_tide_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U elegant_tide"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://elegant_tide:test_password@localhost:5432/elegant_tide_test
+      JWT_SECRET: ci-jwt-secret-min-32-chars-1234567890abcdef
+      JWT_REFRESH_SECRET: ci-refresh-secret-min-32-chars-7890fedcba
+      NODE_ENV: test
 
     steps:
       - uses: actions/checkout@v4
@@ -32,13 +53,16 @@ jobs:
       - name: Generate Prisma client
         run: pnpm --filter @elegant-tide/api db:generate
 
+      - name: Push Prisma schema to test database
+        run: pnpm --filter @elegant-tide/api db:push --skip-generate
+
       - name: Lint
         run: pnpm lint
 
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Run unit tests
+      - name: Run unit + integration tests
         run: pnpm test
 
       - name: Build web app
