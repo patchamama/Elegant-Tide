@@ -6,6 +6,7 @@
     "outDir": "dist",
     "allowImportingTsExtensions": false,
     "noEmit": true,
+    "exactOptionalPropertyTypes": false,
     "paths": {
       "@elegant-tide/core-types": ["../../packages/core-types/src/index.ts"]
     }

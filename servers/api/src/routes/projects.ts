@@ -32,20 +32,22 @@ export async function projectRoutes(app: FastifyInstance) {
 
   app.post('/projects', auth, async (req, reply) => {
     const body = CreateProjectBody.parse(req.body)
+    const createData = {
+      id: body.id,
+      name: body.name,
+      description: body.description,
+      languages: body.languages,
+      primaryLanguage: body.primaryLanguage,
+      defaultStyle: body.defaultStyle,
+      projectorWindows: body.projectorWindows,
+      ownerId: req.userId,
+    }
     const project = await prisma.project.create({
-      data: {
-        id: body.id,
-        name: body.name,
-        description: body.description,
-        languages: body.languages,
-        primaryLanguage: body.primaryLanguage,
-        defaultStyle: body.defaultStyle,
-        projectorWindows: body.projectorWindows,
-        ownerId: req.userId,
-      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      data: createData as any,
       include: { collaborators: true },
     })
-    return reply.code(201).send(dbToDto(project))
+    return reply.code(201).send(dbToDto(project as ProjectWithCollabs))
   })
 
   app.get('/projects/:id', auth, async (req, reply) => {
@@ -63,19 +65,21 @@ export async function projectRoutes(app: FastifyInstance) {
     const project = await prisma.project.findUnique({ where: { id } })
     if (!project || project.ownerId !== req.userId) return reply.code(403).send({ error: 'Forbidden' })
 
+    const updateData = {
+      ...(body.name && { name: body.name }),
+      ...(body.description !== undefined && { description: body.description }),
+      ...(body.languages && { languages: body.languages }),
+      ...(body.primaryLanguage && { primaryLanguage: body.primaryLanguage }),
+      ...(body.defaultStyle && { defaultStyle: body.defaultStyle }),
+      ...(body.projectorWindows && { projectorWindows: body.projectorWindows }),
+    }
     const updated = await prisma.project.update({
       where: { id },
-      data: {
-        ...(body.name && { name: body.name }),
-        ...(body.description !== undefined && { description: body.description }),
-        ...(body.languages && { languages: body.languages }),
-        ...(body.primaryLanguage && { primaryLanguage: body.primaryLanguage }),
-        ...(body.defaultStyle && { defaultStyle: body.defaultStyle }),
-        ...(body.projectorWindows && { projectorWindows: body.projectorWindows }),
-      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      data: updateData as any,
       include: { collaborators: true },
     })
-    return dbToDto(updated)
+    return dbToDto(updated as ProjectWithCollabs)
   })
 
   app.delete('/projects/:id', auth, async (req, reply) => {
@@ -96,8 +100,8 @@ function dbToDto(row: ProjectWithCollabs): SubtitleProject {
     name: row.name,
     languages: row.languages as string[] as import('@elegant-tide/core-types').LangCode[],
     primaryLanguage: row.primaryLanguage as import('@elegant-tide/core-types').LangCode,
-    defaultStyle: row.defaultStyle as import('@elegant-tide/core-types').ProjectionStyle,
-    projectorWindows: (row.projectorWindows as unknown[]) as import('@elegant-tide/core-types').ProjectorWindowConfig[],
+    defaultStyle: row.defaultStyle as unknown as import('@elegant-tide/core-types').ProjectionStyle,
+    projectorWindows: row.projectorWindows as unknown as import('@elegant-tide/core-types').ProjectorWindowConfig[],
     ownerId: row.ownerId,
     collaborators: row.collaborators.map((c: Collab) => ({
       userId: c.userId,
