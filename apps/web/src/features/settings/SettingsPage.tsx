@@ -4,7 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useTranslation } from 'react-i18next'
 import { db, appConfigRepo } from '@elegant-tide/db'
 import type { AppConfig, LangCode } from '@elegant-tide/core-types'
-import { ArrowLeft, Globe, Server, Palette } from 'lucide-react'
+import { ArrowLeft, Globe, Server, Palette, Sun, Moon } from 'lucide-react'
 
 const LOCALE_OPTIONS: { value: LangCode; label: string; native: string }[] = [
   { value: 'en', label: 'English', native: 'English' },
@@ -20,6 +20,15 @@ export function SettingsPage() {
   const config = useLiveQuery(() => appConfigRepo.get(), [])
   const [backendUrl, setBackendUrl] = useState('')
   const [backendSaved, setBackendSaved] = useState(false)
+  const [theme, setTheme] = useState<'dark' | 'light'>(
+    () => (localStorage.getItem('et-theme') ?? 'dark') as 'dark' | 'light',
+  )
+
+  const applyTheme = (next: 'dark' | 'light') => {
+    setTheme(next)
+    localStorage.setItem('et-theme', next)
+    document.documentElement.setAttribute('data-theme', next)
+  }
 
   useEffect(() => {
     if (config?.backendUrl !== undefined) setBackendUrl(config.backendUrl ?? '')
@@ -145,6 +154,40 @@ export function SettingsPage() {
           {!config.backendUrl && (
             <p className="text-xs text-slate-600 mt-2">Running in pure offline mode — 7-day gate inactive.</p>
           )}
+        </section>
+
+        <hr className="border-slate-800" />
+
+        {/* Appearance */}
+        <section>
+          <div className="flex items-center gap-2 mb-4">
+            <Palette size={16} className="text-slate-400" />
+            <h2 className="font-medium text-white">Appearance</h2>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => applyTheme('dark')}
+              className={`flex items-center gap-2 px-4 py-3 rounded-xl border text-sm transition-colors ${
+                theme === 'dark'
+                  ? 'border-brand-500 bg-brand-950/30 text-white'
+                  : 'border-slate-700 hover:border-slate-600 text-slate-300 hover:text-white'
+              }`}
+            >
+              <Moon size={15} />
+              Dark
+            </button>
+            <button
+              onClick={() => applyTheme('light')}
+              className={`flex items-center gap-2 px-4 py-3 rounded-xl border text-sm transition-colors ${
+                theme === 'light'
+                  ? 'border-brand-500 bg-brand-950/30 text-white'
+                  : 'border-slate-700 hover:border-slate-600 text-slate-300 hover:text-white'
+              }`}
+            >
+              <Sun size={15} />
+              Light
+            </button>
+          </div>
         </section>
 
         <hr className="border-slate-800" />

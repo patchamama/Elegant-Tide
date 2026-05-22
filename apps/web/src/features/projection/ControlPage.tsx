@@ -209,7 +209,7 @@ export function ControlPage() {
   const editingWindow = windowConfigs.find((w) => w.id === editingWindowId)
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+    <div className="h-screen bg-slate-950 text-slate-100 flex flex-col overflow-hidden">
       {/* Toolbar */}
       <header className="bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex items-center gap-3 flex-shrink-0">
         <button

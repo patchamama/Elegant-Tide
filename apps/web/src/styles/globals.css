@@ -46,3 +46,19 @@ body {
 :focus-visible {
   @apply outline-2 outline-offset-2 outline-brand-500;
 }
+
+/* Light theme — inverts the slate scale so dark UI classes become light */
+html[data-theme="light"] {
+  color-scheme: light;
+  --color-slate-950: oklch(98.4% 0.003 247.86);
+  --color-slate-900: oklch(96.8% 0.007 247.66);
+  --color-slate-800: oklch(92.9% 0.013 255.51);
+  --color-slate-700: oklch(87.2% 0.019 258.34);
+  --color-slate-600: oklch(70.4% 0.028 256.85);
+  --color-slate-500: oklch(55.4% 0.046 257.42);
+  --color-slate-400: oklch(44.6% 0.043 257.28);
+  --color-slate-300: oklch(37.2% 0.044 257.29);
+  --color-slate-200: oklch(27.9% 0.039 260.03);
+  --color-slate-100: oklch(20.8% 0.042 265.75);
+  --color-slate-50:  oklch(13% 0.028 261.69);
+}
