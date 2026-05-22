@@ -14,7 +14,7 @@ export interface ImportOptions {
 
 export interface ImportResult {
   lines: SubtitleLine[]
-  format: 'srt' | 'vtt' | 'docx' | 'pdf' | 'plaintext' | 'spectitular'
+  format: 'srt' | 'vtt' | 'docx' | 'pdf' | 'plaintext' | 'spectitular' | 'etide'
   warnings: string[]
   // Populated only for spectitular imports
   projectName?: string

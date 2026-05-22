@@ -20,6 +20,7 @@ import {
   Link,
   Sparkles,
   Loader2,
+  Square,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -31,24 +32,28 @@ interface LineRowProps {
   isSelected: boolean
   index: number
   isDragging?: boolean
+  showNotes?: boolean
 }
 
 const TYPE_ICONS: Record<LineType, React.ElementType> = {
   subtitle: AlignLeft,
   comment: MessageSquare,
   media: Film,
+  blackout: Square,
 }
 
 const TYPE_LABELS: Record<LineType, string> = {
   subtitle: 'Subtitle',
   comment: 'Comment',
   media: 'Media',
+  blackout: 'Blackout',
 }
 
 const TYPE_COLORS: Record<LineType, string> = {
   subtitle: 'text-slate-400',
   comment: 'text-amber-400',
   media: 'text-purple-400',
+  blackout: 'text-slate-600',
 }
 
 const MEDIA_SOURCES: { value: MediaSourceType; label: string; Icon: React.ElementType }[] = [
@@ -66,11 +71,13 @@ export function LineRow({
   isSelected,
   index,
   isDragging = false,
+  showNotes = false,
 }: LineRowProps) {
   const {
     selectLine,
     updateTranslation,
     updateLineType,
+    updateComment,
     deleteLine,
     insertLineAfter,
     splitLine,
@@ -193,6 +200,10 @@ export function LineRow({
           <CommentCell line={line} />
         ) : line.type === 'media' ? (
           <MediaCell line={line} />
+        ) : line.type === 'blackout' ? (
+          <div className="flex-1 flex items-center px-1 py-2">
+            <span className="text-xs text-slate-700 italic select-none">— blackout —</span>
+          </div>
         ) : (
           languages.map((lang) => (
             <SubtitleCell
@@ -211,6 +222,20 @@ export function LineRow({
           ))
         )}
       </div>
+
+      {/* Notes column */}
+      {showNotes && (
+        <div className="w-44 flex-shrink-0">
+          <textarea
+            value={line.comment ?? ''}
+            onChange={(e) => void updateComment(line.id, e.target.value)}
+            rows={2}
+            placeholder="Note…"
+            className="w-full bg-transparent text-slate-500 text-xs italic resize-none outline-none placeholder-slate-700 focus:bg-slate-800/40 rounded px-1 py-0.5 transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
 
       {/* Action buttons */}
       <div className="flex-shrink-0 flex items-center gap-0.5 pt-1 opacity-0 group-hover:opacity-100 transition-opacity">

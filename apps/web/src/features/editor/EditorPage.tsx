@@ -9,6 +9,7 @@ import {
   ArrowLeft,
   Play,
   Upload,
+  Download,
   Plus,
   Settings,
   Globe,
@@ -16,6 +17,7 @@ import {
 } from 'lucide-react'
 import { LineList } from './LineList'
 import { ImportDialog } from './ImportDialog'
+import { ExportDialog } from './ExportDialog'
 import { ConflictsDrawer } from './ConflictsDrawer'
 import { useState } from 'react'
 import type { LangCode, SubtitleProject, ProjectionStyle } from '@elegant-tide/core-types'
@@ -36,11 +38,13 @@ export function EditorPage() {
   const { projectId } = useParams({ from: '/editor/$projectId' })
   const navigate = useNavigate()
   const { loadProject, updateProject } = useProjectStore()
-  const { addLine } = useEditorStore()
+  const { addLine, selectedIds } = useEditorStore()
   const [showImport, setShowImport] = useState(false)
+  const [showExport, setShowExport] = useState(false)
   const [showLangPicker, setShowLangPicker] = useState(false)
   const [showProjectSettings, setShowProjectSettings] = useState(false)
   const [showConflicts, setShowConflicts] = useState(false)
+  const [showNotes, setShowNotes] = useState(false)
 
   // Live queries — react instantly to DB changes
   const project = useLiveQuery(() => db.projects.get(projectId), [projectId])
@@ -65,6 +69,15 @@ export function EditorPage() {
 
   const handleAddLine = async () => {
     await addLine(projectId)
+  }
+
+  const handleImportComplete = async (detectedLanguages: LangCode[]) => {
+    if (!project || detectedLanguages.length === 0) return
+    const existing = new Set(project.languages)
+    const added = detectedLanguages.filter(l => !existing.has(l))
+    if (added.length > 0) {
+      await updateProject({ id: projectId, languages: [...project.languages, ...added] })
+    }
   }
 
   const toggleLanguage = async (lang: LangCode) => {
@@ -94,8 +107,12 @@ export function EditorPage() {
     )
   }
 
+  const subtitleCount = lines?.filter(l => l.type === 'subtitle').length ?? 0
+  const blackoutCount = lines?.filter(l => l.type === 'blackout').length ?? 0
+  const commentCount = lines?.filter(l => l.type === 'comment').length ?? 0
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+    <div className="h-screen bg-slate-950 text-slate-100 flex flex-col">
       {/* Toolbar */}
       <header className="bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex items-center gap-3 flex-shrink-0">
         <button
@@ -169,6 +186,14 @@ export function EditorPage() {
         </button>
 
         <button
+          onClick={() => setShowExport(true)}
+          className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-slate-800 border border-slate-700 transition-colors"
+        >
+          <Download size={13} />
+          Export
+        </button>
+
+        <button
           onClick={() => void handleAddLine()}
           className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-white px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors"
         >
@@ -194,6 +219,7 @@ export function EditorPage() {
             {lang.toUpperCase()}
           </div>
         ))}
+        {showNotes && <div className="w-44 flex-shrink-0 text-center normal-case tracking-normal text-slate-600">Notes</div>}
         <div className="w-24" />
       </div>
 
@@ -209,6 +235,7 @@ export function EditorPage() {
             languages={project.languages as LangCode[]}
             primaryLang={project.primaryLanguage as LangCode}
             projectId={projectId}
+            showNotes={showNotes}
           />
         )}
       </div>
@@ -220,6 +247,19 @@ export function EditorPage() {
           languages={project.languages as LangCode[]}
           primaryLanguage={project.primaryLanguage}
           onClose={() => setShowImport(false)}
+          onImportComplete={handleImportComplete}
+        />
+      )}
+
+      {/* Export dialog */}
+      {showExport && lines && (
+        <ExportDialog
+          projectId={projectId}
+          projectName={project.name}
+          languages={project.languages as LangCode[]}
+          primaryLanguage={project.primaryLanguage}
+          lines={lines}
+          onClose={() => setShowExport(false)}
         />
       )}
 
@@ -240,6 +280,31 @@ export function EditorPage() {
           onSave={async (patch) => { await updateProject({ id: projectId, ...patch }); setShowProjectSettings(false) }}
         />
       )}
+
+      {/* Bottom status bar */}
+      <footer className="bg-slate-900 border-t border-slate-800 px-4 py-1.5 flex items-center gap-3 flex-shrink-0 text-xs text-slate-500 select-none">
+        <span className="tabular-nums text-slate-400">{lines?.length ?? 0} lines</span>
+        {subtitleCount > 0 && <><span>·</span><span>{subtitleCount} subtitles</span></>}
+        {blackoutCount > 0 && <><span>·</span><span>{blackoutCount} blackouts</span></>}
+        {commentCount > 0 && <><span>·</span><span>{commentCount} comments</span></>}
+
+        <div className="flex-1" />
+
+        {selectedIds.size > 0 && (
+          <span className="text-brand-400 tabular-nums">{selectedIds.size} selected</span>
+        )}
+
+        <button
+          onClick={() => setShowNotes(v => !v)}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-colors ${
+            showNotes
+              ? 'border-brand-600 text-brand-400 bg-brand-950/20'
+              : 'border-slate-700 text-slate-600 hover:text-slate-300 hover:border-slate-600'
+          }`}
+        >
+          Notes
+        </button>
+      </footer>
     </div>
   )
 }

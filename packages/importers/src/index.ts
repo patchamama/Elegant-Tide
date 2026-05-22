@@ -7,8 +7,12 @@ import { parseDocx } from './docx.ts'
 import { parsePdf } from './pdf.ts'
 import { parsePlaintext } from './plaintext.ts'
 import { parseSpectitular } from './spectitular.ts'
+import { parseEtide } from './etide.ts'
 
 export type { ImportedLine, ImportOptions, ImportResult, FileFormat }
+export { exportSrtMono, exportSrtBilingual } from './exportSrt.ts'
+export { exportPlaintext } from './exportPlaintext.ts'
+export { exportEtide } from './etide.ts'
 
 export function detectFormat(filename: string): FileFormat {
   const ext = filename.split('.').pop()?.toLowerCase() ?? ''
@@ -17,6 +21,7 @@ export function detectFormat(filename: string): FileFormat {
   if (ext === 'docx') return 'docx'
   if (ext === 'pdf') return 'pdf'
   if (ext === 'spectitular') return 'spectitular'
+  if (ext === 'etide') return 'etide'
   return 'plaintext'
 }
 
@@ -61,6 +66,11 @@ export async function importFile(
       projectName: result.projectName,
       detectedLanguages: result.detectedLanguages,
     }
+  }
+
+  if (format === 'etide') {
+    const text = await file.text()
+    return parseEtide(text, opts.projectId)
   }
 
   if (format === 'srt') {

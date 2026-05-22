@@ -120,11 +120,21 @@ echo ""
 cp "$ACTIVE_SCHEMA" "$API_DIR/prisma/schema.prisma"
 cd "$API_DIR"
 
-printf "  ${CYAN}Generating Prisma client…${RESET}\n"
-pnpm exec prisma generate 2>/dev/null
+# Skip generate if schema hash matches the last run (avoids ~45s WSL2 cold start)
+SCHEMA_HASH=$(md5sum "$API_DIR/prisma/schema.prisma" 2>/dev/null | cut -d' ' -f1)
+HASH_CACHE="$API_DIR/.prisma-schema-hash"
+CACHED_HASH=$(cat "$HASH_CACHE" 2>/dev/null || echo "")
+
+if [ "$SCHEMA_HASH" != "$CACHED_HASH" ]; then
+  printf "  ${CYAN}Generating Prisma client…${RESET}\n"
+  pnpm exec prisma generate && printf "%s" "$SCHEMA_HASH" > "$HASH_CACHE"
+else
+  printf "  ${DIM}Prisma client up to date${RESET}\n"
+fi
 
 printf "  ${CYAN}Syncing schema to database…${RESET}\n"
-pnpm exec prisma db push --skip-generate --accept-data-loss 2>/dev/null \
+pnpm exec prisma db push --skip-generate --accept-data-loss \
+  2>&1 | grep -v "^$\|Running generate\|Prisma schema loaded\|Environment variables" \
   || printf "  ${YELLOW}[WARN] db:push failed — check DATABASE_URL or DB connectivity${RESET}\n"
 
 # ── Start API server ───────────────────────────────────────────────────────────

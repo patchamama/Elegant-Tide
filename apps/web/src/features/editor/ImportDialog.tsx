@@ -4,8 +4,19 @@ import { linesRepo } from '@elegant-tide/db'
 import { importFile, detectFormat } from '@elegant-tide/importers'
 import type { ImportResult } from '@elegant-tide/importers'
 import { useEditorStore } from '@/stores/useEditorStore'
-import { AlertCircle, FileUp, X, Layers } from 'lucide-react'
+import { AlertCircle, FileUp, X, Layers, Loader2 } from 'lucide-react'
 import { clsx } from 'clsx'
+
+function ProgressBar({ value }: { value: number }) {
+  return (
+    <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+      <div
+        className="h-full bg-brand-500 rounded-full transition-all duration-100 ease-out"
+        style={{ width: `${value}%` }}
+      />
+    </div>
+  )
+}
 
 const LANG_LABELS: Record<LangCode, string> = {
   en: 'English',
@@ -16,27 +27,30 @@ const LANG_LABELS: Record<LangCode, string> = {
   pt: 'Português',
 }
 
-const FORMAT_ACCEPT = '.srt,.vtt,.docx,.pdf,.txt,.spectitular'
+const FORMAT_ACCEPT = '.srt,.vtt,.docx,.pdf,.txt,.spectitular,.etide'
 
 interface ImportDialogProps {
   projectId: string
   languages: LangCode[]
   primaryLanguage: LangCode
   onClose: () => void
+  onImportComplete?: (detectedLanguages: LangCode[]) => void
 }
 
 type Step = 'pick' | 'preview' | 'importing' | 'done'
 
-export function ImportDialog({ projectId, languages, primaryLanguage, onClose }: ImportDialogProps) {
+export function ImportDialog({ projectId, languages, primaryLanguage, onClose, onImportComplete }: ImportDialogProps) {
   const [step, setStep] = useState<Step>('pick')
   const [dragOver, setDragOver] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [targetLang, setTargetLang] = useState<LangCode>(primaryLanguage)
   const [result, setResult] = useState<ImportResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const { loadLines } = useEditorStore()
 
+  const isMultiLang = result?.format === 'spectitular' || result?.format === 'etide'
   const isSpectitular = result?.format === 'spectitular'
 
   const handleFile = useCallback(async (f: File) => {
@@ -63,22 +77,28 @@ export function ImportDialog({ projectId, languages, primaryLanguage, onClose }:
     if (!result) return
     setStep('importing')
     try {
-      const res = file && !isSpectitular
+      const res = file && !isMultiLang
         ? await importFile(file, { projectId, targetLang })
         : result
-      for (const line of res.lines) {
-        await linesRepo.upsert(line)
+      setProgress({ done: 0, total: res.lines.length })
+      for (let i = 0; i < res.lines.length; i++) {
+        await linesRepo.upsert(res.lines[i]!)
+        setProgress({ done: i + 1, total: res.lines.length })
       }
       await loadLines(projectId)
+      setProgress(null)
+      if (res.detectedLanguages && res.detectedLanguages.length > 0) {
+        onImportComplete?.(res.detectedLanguages)
+      }
       setStep('done')
     } catch (e) {
+      setProgress(null)
       setError(e instanceof Error ? e.message : String(e))
       setStep('preview')
     }
-  }, [result, file, projectId, targetLang, loadLines, isSpectitular])
+  }, [result, file, projectId, targetLang, loadLines, isMultiLang])
 
-  // For spectitular preview: determine which language columns to show
-  const previewLangs = isSpectitular && result?.detectedLanguages?.length
+  const previewLangs = isMultiLang && result?.detectedLanguages?.length
     ? result.detectedLanguages
     : [targetLang]
 
@@ -138,7 +158,15 @@ export function ImportDialog({ projectId, languages, primaryLanguage, onClose }:
             </>
           )}
 
-          {/* Step: preview */}
+          {/* Step: preview — parsing */}
+          {step === 'preview' && !result && (
+            <div className="flex flex-col items-center justify-center py-12 gap-3 text-slate-500">
+              <Loader2 size={24} className="animate-spin text-brand-400" />
+              <span className="text-sm">Parsing file…</span>
+            </div>
+          )}
+
+          {/* Step: preview — ready */}
           {(step === 'preview' || step === 'importing') && result && (
             <>
               {/* File info */}
@@ -163,8 +191,8 @@ export function ImportDialog({ projectId, languages, primaryLanguage, onClose }:
                 </div>
               )}
 
-              {/* Language picker — only for non-spectitular formats */}
-              {!isSpectitular && (
+              {/* Language picker — only for single-language formats */}
+              {!isMultiLang && (
                 <div className="flex items-center gap-3">
                   <label className="text-sm text-slate-400 flex-shrink-0">Import as language:</label>
                   <select
@@ -305,8 +333,14 @@ export function ImportDialog({ projectId, languages, primaryLanguage, onClose }:
               </button>
             </>
           )}
-          {step === 'importing' && (
-            <span className="text-sm text-slate-400 mx-auto">Saving to database…</span>
+          {step === 'importing' && progress && (
+            <div className="flex-1 space-y-1.5">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>Saving to database…</span>
+                <span className="tabular-nums">{progress.done} / {progress.total}</span>
+              </div>
+              <ProgressBar value={Math.round((progress.done / progress.total) * 100)} />
+            </div>
           )}
           {(step === 'pick' || step === 'done') && (
             <button

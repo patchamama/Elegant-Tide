@@ -23,9 +23,10 @@ interface LineListProps {
   languages: LangCode[]
   primaryLang: LangCode
   projectId: string
+  showNotes?: boolean
 }
 
-export function LineList({ lines, languages, primaryLang, projectId }: LineListProps) {
+export function LineList({ lines, languages, primaryLang, projectId, showNotes = false }: LineListProps) {
   const parentRef = useRef<HTMLDivElement>(null)
   const { selectedIds, reorderLine } = useEditorStore()
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -121,6 +122,7 @@ export function LineList({ lines, languages, primaryLang, projectId }: LineListP
                     isSelected={selectedIds.has(line.id)}
                     index={vItem.index}
                     isDragging={line.id === draggingId}
+                    showNotes={showNotes}
                   />
                 </div>
               )

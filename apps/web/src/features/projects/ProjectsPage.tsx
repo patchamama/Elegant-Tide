@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate, Link } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from '@elegant-tide/db'
+import { db, linesRepo } from '@elegant-tide/db'
 import { useProjectStore } from '@/stores/useProjectStore'
 import {
   PlusIcon,
@@ -15,8 +15,10 @@ import {
   Film,
   Globe,
   Settings,
+  Download,
 } from 'lucide-react'
-import type { SubtitleProject } from '@elegant-tide/core-types'
+import type { LangCode, SubtitleLine, SubtitleProject } from '@elegant-tide/core-types'
+import { ExportDialog } from '@/features/editor/ExportDialog'
 
 export function ProjectsPage() {
   const { t } = useTranslation()
@@ -34,6 +36,7 @@ export function ProjectsPage() {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [exportingProject, setExportingProject] = useState<{ project: SubtitleProject; lines: SubtitleLine[] } | null>(null)
 
   const createInputRef = useRef<HTMLInputElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
@@ -69,6 +72,11 @@ export function ProjectsPage() {
   const startRename = (project: SubtitleProject) => {
     setRenamingId(project.id)
     setRenameValue(project.name)
+  }
+
+  const handleExport = async (project: SubtitleProject) => {
+    const lines = await linesRepo.listByProject(project.id)
+    setExportingProject({ project, lines })
   }
 
   const loading = projects === undefined
@@ -217,6 +225,13 @@ export function ProjectsPage() {
                   /* Action buttons */
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
+                      onClick={() => void handleExport(project)}
+                      title="Export"
+                      className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                    >
+                      <Download size={15} />
+                    </button>
+                    <button
                       onClick={() => startRename(project)}
                       title={t('projects.rename')}
                       className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-700 transition-colors"
@@ -246,6 +261,17 @@ export function ProjectsPage() {
           </div>
         )}
       </main>
+
+      {exportingProject && (
+        <ExportDialog
+          projectId={exportingProject.project.id}
+          projectName={exportingProject.project.name}
+          languages={exportingProject.project.languages as LangCode[]}
+          primaryLanguage={exportingProject.project.primaryLanguage}
+          lines={exportingProject.lines}
+          onClose={() => setExportingProject(null)}
+        />
+      )}
     </div>
   )
 }

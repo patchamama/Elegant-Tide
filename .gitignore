@@ -47,3 +47,6 @@ apps/mobile/ios/
 *.db
 *.db-shm
 *.db-wal
+
+# Prisma generate cache (WSL2 startup optimization)
+.prisma-schema-hash
