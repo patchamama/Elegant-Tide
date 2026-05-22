@@ -4,7 +4,7 @@ import { linesRepo } from '@elegant-tide/db'
 import { importFile, detectFormat } from '@elegant-tide/importers'
 import type { ImportResult } from '@elegant-tide/importers'
 import { useEditorStore } from '@/stores/useEditorStore'
-import { AlertCircle, FileUp, X } from 'lucide-react'
+import { AlertCircle, FileUp, X, Layers } from 'lucide-react'
 import { clsx } from 'clsx'
 
 const LANG_LABELS: Record<LangCode, string> = {
@@ -16,7 +16,7 @@ const LANG_LABELS: Record<LangCode, string> = {
   pt: 'Português',
 }
 
-const FORMAT_ACCEPT = '.srt,.vtt,.docx,.pdf,.txt'
+const FORMAT_ACCEPT = '.srt,.vtt,.docx,.pdf,.txt,.spectitular'
 
 interface ImportDialogProps {
   projectId: string
@@ -36,6 +36,8 @@ export function ImportDialog({ projectId, languages, primaryLanguage, onClose }:
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const { loadLines } = useEditorStore()
+
+  const isSpectitular = result?.format === 'spectitular'
 
   const handleFile = useCallback(async (f: File) => {
     setFile(f)
@@ -61,8 +63,9 @@ export function ImportDialog({ projectId, languages, primaryLanguage, onClose }:
     if (!result) return
     setStep('importing')
     try {
-      // Re-parse with the selected language in case user changed it after preview
-      const res = file ? await importFile(file, { projectId, targetLang }) : result
+      const res = file && !isSpectitular
+        ? await importFile(file, { projectId, targetLang })
+        : result
       for (const line of res.lines) {
         await linesRepo.upsert(line)
       }
@@ -72,14 +75,19 @@ export function ImportDialog({ projectId, languages, primaryLanguage, onClose }:
       setError(e instanceof Error ? e.message : String(e))
       setStep('preview')
     }
-  }, [result, file, projectId, targetLang, loadLines])
+  }, [result, file, projectId, targetLang, loadLines, isSpectitular])
+
+  // For spectitular preview: determine which language columns to show
+  const previewLangs = isSpectitular && result?.detectedLanguages?.length
+    ? result.detectedLanguages
+    : [targetLang]
 
   return (
     <div
       className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]">
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl shadow-2xl flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 flex-shrink-0">
           <h2 className="font-semibold text-white">Import Script</h2>
@@ -97,7 +105,6 @@ export function ImportDialog({ projectId, languages, primaryLanguage, onClose }:
           {/* Step: pick */}
           {(step === 'pick') && (
             <>
-              {/* Drop zone */}
               <div
                 onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
                 onDragLeave={() => setDragOver(false)}
@@ -112,7 +119,7 @@ export function ImportDialog({ projectId, languages, primaryLanguage, onClose }:
               >
                 <FileUp size={32} className="text-slate-500" />
                 <p className="text-slate-300 text-sm font-medium">Drop file here or click to browse</p>
-                <p className="text-slate-600 text-xs">SRT · VTT · DOCX · PDF · TXT</p>
+                <p className="text-slate-600 text-xs">SRT · VTT · DOCX · PDF · TXT · Spectitular</p>
                 <input
                   ref={inputRef}
                   type="file"
@@ -143,19 +150,34 @@ export function ImportDialog({ projectId, languages, primaryLanguage, onClose }:
                 <span className="text-slate-400">{result.lines.length} lines</span>
               </div>
 
-              {/* Language picker */}
-              <div className="flex items-center gap-3">
-                <label className="text-sm text-slate-400 flex-shrink-0">Import as language:</label>
-                <select
-                  value={targetLang}
-                  onChange={(e) => setTargetLang(e.target.value as LangCode)}
-                  className="bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-1.5 outline-none"
-                >
-                  {languages.map((lang) => (
-                    <option key={lang} value={lang}>{LANG_LABELS[lang]}</option>
-                  ))}
-                </select>
-              </div>
+              {/* Spectitular info banner */}
+              {isSpectitular && (
+                <div className="flex items-center gap-2 text-sm bg-slate-800/60 border border-slate-700 rounded-lg px-4 py-2.5">
+                  <Layers size={14} className="text-brand-400 flex-shrink-0" />
+                  <span className="text-slate-300">
+                    <span className="font-medium text-white">{result.projectName}</span>
+                    {result.detectedLanguages && result.detectedLanguages.length > 0 && (
+                      <> &mdash; {result.detectedLanguages.map(l => LANG_LABELS[l] ?? l.toUpperCase()).join(', ')}</>
+                    )}
+                  </span>
+                </div>
+              )}
+
+              {/* Language picker — only for non-spectitular formats */}
+              {!isSpectitular && (
+                <div className="flex items-center gap-3">
+                  <label className="text-sm text-slate-400 flex-shrink-0">Import as language:</label>
+                  <select
+                    value={targetLang}
+                    onChange={(e) => setTargetLang(e.target.value as LangCode)}
+                    className="bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-1.5 outline-none"
+                  >
+                    {languages.map((lang) => (
+                      <option key={lang} value={lang}>{LANG_LABELS[lang]}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Warnings */}
               {result.warnings.length > 0 && (
@@ -176,22 +198,61 @@ export function ImportDialog({ projectId, languages, primaryLanguage, onClose }:
                     <thead className="bg-slate-800 sticky top-0">
                       <tr>
                         <th className="text-left px-3 py-2 text-slate-400 font-medium w-10">#</th>
-                        <th className="text-left px-3 py-2 text-slate-400 font-medium">Text</th>
+                        {isSpectitular && (
+                          <th className="text-left px-3 py-2 text-slate-400 font-medium w-16">Type</th>
+                        )}
+                        {previewLangs.map(lang => (
+                          <th key={lang} className="text-left px-3 py-2 text-slate-400 font-medium">
+                            {LANG_LABELS[lang] ?? lang.toUpperCase()}
+                          </th>
+                        ))}
                         {result.lines[0]?.timecode && (
                           <th className="text-left px-3 py-2 text-slate-400 font-medium w-32">Timecode</th>
+                        )}
+                        {isSpectitular && (
+                          <th className="text-left px-3 py-2 text-slate-400 font-medium w-32">Note</th>
                         )}
                       </tr>
                     </thead>
                     <tbody>
                       {result.lines.slice(0, 200).map((line, i) => (
-                        <tr key={line.id} className={clsx(i % 2 === 0 ? 'bg-transparent' : 'bg-slate-800/30')}>
+                        <tr
+                          key={line.id}
+                          className={clsx(
+                            i % 2 === 0 ? 'bg-transparent' : 'bg-slate-800/30',
+                            line.type === 'blackout' && 'opacity-50',
+                          )}
+                        >
                           <td className="px-3 py-1.5 text-slate-600 tabular-nums">{i + 1}</td>
-                          <td className="px-3 py-1.5 text-slate-200 whitespace-pre-wrap break-words">
-                            {line.translations[targetLang] ?? ''}
-                          </td>
+                          {isSpectitular && (
+                            <td className="px-3 py-1.5">
+                              {line.type === 'blackout' && (
+                                <span className="text-xs bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded">■</span>
+                              )}
+                              {line.skip && (
+                                <span className="text-xs bg-yellow-900/50 text-yellow-400 px-1.5 py-0.5 rounded ml-1">skip</span>
+                              )}
+                            </td>
+                          )}
+                          {previewLangs.map(lang => (
+                            <td key={lang} className={clsx(
+                              'px-3 py-1.5 text-slate-200 whitespace-pre-wrap break-words',
+                              line.styleClasses?.includes('italic') && 'italic',
+                            )}>
+                              {line.type === 'blackout'
+                                ? <span className="text-slate-600">— blackout —</span>
+                                : (line.translations[lang] ?? '')
+                              }
+                            </td>
+                          ))}
                           {line.timecode && (
                             <td className="px-3 py-1.5 text-slate-500 text-xs tabular-nums whitespace-nowrap">
                               {formatMs(line.timecode.startMs)}
+                            </td>
+                          )}
+                          {isSpectitular && (
+                            <td className="px-3 py-1.5 text-slate-500 text-xs truncate max-w-32">
+                              {line.comment ?? ''}
                             </td>
                           )}
                         </tr>
@@ -213,6 +274,11 @@ export function ImportDialog({ projectId, languages, primaryLanguage, onClose }:
             <div className="text-center py-8">
               <p className="text-slate-300 font-medium">Import complete!</p>
               <p className="text-slate-500 text-sm mt-1">{result?.lines.length} lines added to your project.</p>
+              {isSpectitular && result?.detectedLanguages && result.detectedLanguages.length > 0 && (
+                <p className="text-slate-600 text-xs mt-1">
+                  Languages: {result.detectedLanguages.map(l => LANG_LABELS[l] ?? l).join(', ')}
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -233,6 +299,9 @@ export function ImportDialog({ projectId, languages, primaryLanguage, onClose }:
                 className="bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium px-5 py-2 rounded-xl transition-colors disabled:opacity-50"
               >
                 Import {result?.lines.length} lines
+                {isSpectitular && result?.detectedLanguages && result.detectedLanguages.length > 0 && (
+                  <> ({result.detectedLanguages.map(l => l.toUpperCase()).join('+')})</>
+                )}
               </button>
             </>
           )}

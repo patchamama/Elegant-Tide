@@ -2,7 +2,7 @@
 
 export type LangCode = 'en' | 'es' | 'de' | 'fr' | 'it' | 'pt'
 
-export type LineType = 'subtitle' | 'comment' | 'media'
+export type LineType = 'subtitle' | 'comment' | 'media' | 'blackout'
 
 export type MediaSourceType = 'youtube' | 'vimeo' | 'url-video' | 'url-audio'
 
@@ -77,13 +77,18 @@ export interface SubtitleLine {
   type: LineType
   order: number           // fractional index — gaps of 1024 initially
   translations: Translations
-  comment?: string        // for type='comment': stage direction text (not projected)
+  comment?: string        // operator note / stage direction (not projected)
   media?: MediaPayload    // for type='media'
   timecode?: { startMs: number; endMs: number } // optional, from SRT/VTT import
   updatedAt: number       // epoch ms — used for last-write-wins sync
   updatedBy: string       // userId or 'local'
   version: number         // server-issued; -1 means local-only (never synced)
   deletedAt?: number      // tombstone epoch ms — soft delete for sync
+  // Extended fields (from Spectitular import and future features)
+  skip?: boolean          // operator marks line to skip during projection
+  role?: string           // character / speaker name
+  styleClasses?: string   // CSS class names e.g. 'italic bold'
+  spectitularMeta?: Record<string, unknown> // UID, act, scene, show logs, etc.
 }
 
 // ─── Project ─────────────────────────────────────────────────────────────────

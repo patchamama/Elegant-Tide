@@ -6,6 +6,7 @@ import { parseVtt } from './vtt.ts'
 import { parseDocx } from './docx.ts'
 import { parsePdf } from './pdf.ts'
 import { parsePlaintext } from './plaintext.ts'
+import { parseSpectitular } from './spectitular.ts'
 
 export type { ImportedLine, ImportOptions, ImportResult, FileFormat }
 
@@ -15,6 +16,7 @@ export function detectFormat(filename: string): FileFormat {
   if (ext === 'vtt') return 'vtt'
   if (ext === 'docx') return 'docx'
   if (ext === 'pdf') return 'pdf'
+  if (ext === 'spectitular') return 'spectitular'
   return 'plaintext'
 }
 
@@ -48,6 +50,18 @@ export async function importFile(
   const format = detectFormat(file.name)
   const warnings: string[] = []
   let imported: ImportedLine[] = []
+
+  if (format === 'spectitular') {
+    const text = await file.text()
+    const result = parseSpectitular(text, opts.projectId)
+    return {
+      lines: result.lines,
+      format: 'spectitular',
+      warnings: result.warnings,
+      projectName: result.projectName,
+      detectedLanguages: result.detectedLanguages,
+    }
+  }
 
   if (format === 'srt') {
     const text = await file.text()

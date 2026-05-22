@@ -36,7 +36,7 @@ export async function projectRoutes(app: FastifyInstance) {
       id: body.id,
       name: body.name,
       description: body.description,
-      languages: body.languages,
+      languages: JSON.stringify(body.languages),
       primaryLanguage: body.primaryLanguage,
       defaultStyle: body.defaultStyle,
       projectorWindows: body.projectorWindows,
@@ -68,7 +68,7 @@ export async function projectRoutes(app: FastifyInstance) {
     const updateData = {
       ...(body.name && { name: body.name }),
       ...(body.description !== undefined && { description: body.description }),
-      ...(body.languages && { languages: body.languages }),
+      ...(body.languages && { languages: JSON.stringify(body.languages) }),
       ...(body.primaryLanguage && { primaryLanguage: body.primaryLanguage }),
       ...(body.defaultStyle && { defaultStyle: body.defaultStyle }),
       ...(body.projectorWindows && { projectorWindows: body.projectorWindows }),
@@ -98,7 +98,7 @@ function dbToDto(row: ProjectWithCollabs): SubtitleProject {
   return {
     id: row.id,
     name: row.name,
-    languages: row.languages as string[] as import('@elegant-tide/core-types').LangCode[],
+    languages: (typeof row.languages === 'string' ? JSON.parse(row.languages) : row.languages) as import('@elegant-tide/core-types').LangCode[],
     primaryLanguage: row.primaryLanguage as import('@elegant-tide/core-types').LangCode,
     defaultStyle: row.defaultStyle as unknown as import('@elegant-tide/core-types').ProjectionStyle,
     projectorWindows: row.projectorWindows as unknown as import('@elegant-tide/core-types').ProjectorWindowConfig[],

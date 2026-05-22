@@ -42,3 +42,8 @@ apps/mobile/ios/
 
 # Engram
 .engram/
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal

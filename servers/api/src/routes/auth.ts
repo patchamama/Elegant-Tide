@@ -17,7 +17,7 @@ const RegisterBody = z.object({
 })
 
 function signRefresh(userId: string): string {
-  return jwt.sign({ sub: userId, type: 'refresh' }, env.JWT_REFRESH_SECRET, { expiresIn: '30d' })
+  return jwt.sign({ sub: userId, type: 'refresh', jti: crypto.randomUUID() }, env.JWT_REFRESH_SECRET, { expiresIn: '30d' })
 }
 
 function verifyRefresh(token: string): { sub: string } {

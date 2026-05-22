@@ -6,7 +6,7 @@ import type { MediaPayload, SubtitleLine } from '@elegant-tide/core-types'
 const LineUpsertSchema = z.object({
   id: z.string(),
   projectId: z.string(),
-  type: z.enum(['subtitle', 'comment', 'media']),
+  type: z.enum(['subtitle', 'comment', 'media', 'blackout']),
   order: z.number(),
   translations: z.record(z.string()),
   comment: z.string().optional(),
@@ -16,6 +16,10 @@ const LineUpsertSchema = z.object({
   updatedBy: z.string(),
   version: z.number(),
   deletedAt: z.number().optional(),
+  skip: z.boolean().optional(),
+  role: z.string().optional(),
+  styleClasses: z.string().optional(),
+  spectitularMeta: z.record(z.unknown()).optional(),
 })
 
 const PushBody = z.object({
@@ -97,7 +101,12 @@ export async function syncRoutes(app: FastifyInstance) {
           ...(incoming.comment && { comment: incoming.comment }),
           ...(incoming.media && { media: incoming.media }),
           ...(incoming.timecode && { timecode: incoming.timecode }),
+          ...(incoming.skip !== undefined && { skip: incoming.skip }),
+          ...(incoming.role && { role: incoming.role }),
+          ...(incoming.styleClasses && { styleClasses: incoming.styleClasses }),
+          ...(incoming.spectitularMeta && { spectitularMeta: incoming.spectitularMeta }),
           updatedBy: incoming.updatedBy,
+          updatedAt: new Date(incoming.updatedAt),
           version: 1,
           ...(incoming.deletedAt && { deletedAt: new Date(incoming.deletedAt) }),
         }
@@ -123,7 +132,12 @@ export async function syncRoutes(app: FastifyInstance) {
           comment: incoming.comment ?? null,
           media: incoming.media ?? null,
           timecode: incoming.timecode ?? null,
+          skip: incoming.skip ?? false,
+          role: incoming.role ?? null,
+          styleClasses: incoming.styleClasses ?? null,
+          spectitularMeta: incoming.spectitularMeta ?? null,
           updatedBy: incoming.updatedBy,
+          updatedAt: new Date(incoming.updatedAt),
           version: { increment: 1 },
           ...(incoming.deletedAt && { deletedAt: new Date(incoming.deletedAt) }),
         }
@@ -156,6 +170,10 @@ function dbLineToDto(row: DbLine): SubtitleLine {
   if (row.comment) dto.comment = row.comment
   if (row.media) dto.media = row.media as unknown as MediaPayload
   if (row.timecode) dto.timecode = row.timecode as unknown as { startMs: number; endMs: number }
+  if (row.skip) dto.skip = row.skip
+  if (row.role) dto.role = row.role
+  if (row.styleClasses) dto.styleClasses = row.styleClasses
+  if (row.spectitularMeta) dto.spectitularMeta = row.spectitularMeta as Record<string, unknown>
   if (row.deletedAt) dto.deletedAt = row.deletedAt.getTime()
   return dto
 }

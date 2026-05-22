@@ -14,8 +14,11 @@ export interface ImportOptions {
 
 export interface ImportResult {
   lines: SubtitleLine[]
-  format: 'srt' | 'vtt' | 'docx' | 'pdf' | 'plaintext'
+  format: 'srt' | 'vtt' | 'docx' | 'pdf' | 'plaintext' | 'spectitular'
   warnings: string[]
+  // Populated only for spectitular imports
+  projectName?: string
+  detectedLanguages?: LangCode[]
 }
 
 export type FileFormat = ImportResult['format']
