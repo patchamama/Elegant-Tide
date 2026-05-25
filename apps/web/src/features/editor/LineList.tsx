@@ -195,6 +195,7 @@ export function LineList({ lines, languages, primaryLang, projectId, showNotes =
                     canEditComments={canEditComments}
                     openRanges={openRangesPerLine[vItem.index] ?? []}
                     onLineActivate={onLineActivate}
+                    isCurrentProjection={line.id === followLineId}
                   />
                 </div>
               )

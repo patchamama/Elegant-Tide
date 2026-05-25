@@ -64,6 +64,7 @@ interface LineRowProps {
   canEditComments?: boolean
   openRanges?: OpenRange[]
   onLineActivate?: ((lineId: string) => void) | undefined
+  isCurrentProjection?: boolean
 }
 
 const TYPE_ICONS: Record<LineType, React.ElementType> = {
@@ -112,6 +113,7 @@ export function LineRow({
   canEditComments = true,
   openRanges = [],
   onLineActivate,
+  isCurrentProjection = false,
 }: LineRowProps) {
   const {
     selectLine,
@@ -170,9 +172,11 @@ export function LineRow({
 
   const rowBg = isDragging
     ? 'bg-slate-800/50 border-slate-700'
-    : isActiveMatch
-      ? 'bg-yellow-900/20 border-yellow-700/40'
-      : line.type === 'comment'
+    : isCurrentProjection
+      ? 'bg-brand-900/40 border-brand-600/60'
+      : isActiveMatch
+        ? 'bg-yellow-900/20 border-yellow-700/40'
+        : line.type === 'comment'
         ? 'bg-amber-950/20 border-amber-900/20'
         : line.type === 'media'
           ? 'bg-purple-950/20 border-purple-900/20'
