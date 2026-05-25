@@ -3,10 +3,11 @@ import { useParams } from '@tanstack/react-router'
 import { createBus } from '@elegant-tide/broadcast-protocol'
 import type { SubtitleLine, LangCode, ProjectionChannel, ProjectionStyle, MediaPayload } from '@elegant-tide/core-types'
 import { DEFAULT_PROJECTION_STYLE } from '@elegant-tide/core-types'
-import { linesRepo, db } from '@elegant-tide/db'
+import { linesRepo, db, projectsRepo } from '@elegant-tide/db'
 import ReactPlayer from 'react-player'
-import { Settings, X } from 'lucide-react'
+import { Settings, X, FileDown, Save, Check } from 'lucide-react'
 import { saveCurrentLineId, loadCurrentLineId } from '@/lib/projectionStorage'
+import { exportPdf, type PdfPageSize } from '@/lib/exportPdf'
 
 const LANG_OPTIONS: { value: LangCode; label: string }[] = [
   { value: 'en', label: 'English' },
@@ -27,6 +28,8 @@ export function ProjectorPage() {
   const [style, setStyle] = useState<ProjectionStyle>(DEFAULT_PROJECTION_STYLE)
   const [showSettings, setShowSettings] = useState(false)
   const [showMedia, setShowMedia] = useState(true)
+  const [pdfPageSize, setPdfPageSize] = useState<PdfPageSize>('a4')
+  const [savedFeedback, setSavedFeedback] = useState(false)
   const busRef = useRef<ReturnType<typeof createBus> | null>(null)
   const allLinesRef = useRef<SubtitleLine[]>([])
 
@@ -117,6 +120,28 @@ export function ProjectorPage() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [navigateProjector])
+
+  const handleExportPdf = useCallback(async () => {
+    const project = await db.projects.get(projectId)
+    if (!project) return
+    const lines = await db.lines
+      .where('[projectId+order]')
+      .between([projectId, -Infinity], [projectId, Infinity])
+      .filter((l) => !l.deletedAt)
+      .sortBy('order')
+    exportPdf(lines, project.primaryLanguage as LangCode, project.name, style, pdfPageSize)
+  }, [projectId, style, pdfPageSize])
+
+  const handleSaveConfig = useCallback(async () => {
+    const project = await db.projects.get(projectId)
+    if (!project) return
+    const windows = project.projectorWindows?.length
+      ? project.projectorWindows.map((w, i) => i === 0 ? { ...w, language, style, showMedia } : w)
+      : [{ id: crypto.randomUUID(), label: 'Projector 1', language, style, opacity: 1, showMedia, isOpen: false }]
+    await projectsRepo.upsert({ ...project, projectorWindows: windows, updatedAt: Date.now() })
+    setSavedFeedback(true)
+    setTimeout(() => setSavedFeedback(false), 2000)
+  }, [projectId, language, style, showMedia])
 
   const text = (!blackout && currentLine?.type !== 'media')
     ? language === 'comment'
@@ -286,6 +311,40 @@ export function ProjectorPage() {
             />
             <span className="text-sm text-slate-300">Show media cues</span>
           </label>
+
+          <hr className="border-white/10" />
+
+          {/* PDF export */}
+          <div className="space-y-2">
+            <span className="text-slate-400 text-xs block">Export PDF</span>
+            <div className="flex gap-1">
+              {(['a4', 'letter', '16:9'] as PdfPageSize[]).map(size => (
+                <button
+                  key={size}
+                  onClick={() => setPdfPageSize(size)}
+                  className={`flex-1 py-1 rounded text-xs transition-colors ${pdfPageSize === size ? 'bg-brand-600 text-white' : 'bg-white/10 text-slate-400 hover:bg-white/20'}`}
+                >
+                  {size === '16:9' ? '16:9' : size.toUpperCase()}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => void handleExportPdf()}
+              className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 text-sm transition-colors"
+            >
+              <FileDown size={14} />
+              Export PDF
+            </button>
+          </div>
+
+          {/* Save config */}
+          <button
+            onClick={() => void handleSaveConfig()}
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium transition-colors"
+          >
+            {savedFeedback ? <Check size={14} /> : <Save size={14} />}
+            {savedFeedback ? 'Saved!' : 'Save configuration'}
+          </button>
         </div>
       )}
 
