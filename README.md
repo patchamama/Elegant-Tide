@@ -24,6 +24,7 @@ Elegant Tide lets a stage operator manage subtitle scripts and project them live
   - [Backend API](#backend-api)
 - [Testing](#testing)
 - [Key technical decisions](#key-technical-decisions)
+- [Lighting and sound automation](#lighting-and-sound-automation)
 - [Pending / known limitations](#pending--known-limitations)
 
 ---
@@ -437,6 +438,82 @@ GitHub Actions runs lint + typecheck + unit tests + web build on every push and 
 
 - **Translation suggestions** require a running backend with `DEEPL_API_KEY` or `GOOGLE_TRANSLATE_API_KEY` set. The Sparkles button is hidden when no backend is configured.
 
+---
+
+## Lighting and sound automation
+
+Each comment line in the script can be tagged with `sound`, `light`, or both. These tags are stored in the `tags` field of `SubtitleLine` and are available at runtime in the projection store when a line becomes active.
+
+### Concept
+
+The intended integration model is a small adapter process (or a backend webhook) that:
+
+1. Subscribes to cue changes — either by polling `GET /api/projects/:id/current-cue` or by listening to the BroadcastChannel bus (`cue.goto` messages).
+2. Reads the `tags` array of the new active line.
+3. Dispatches commands to the lighting or sound board API if the relevant tag is present.
+
+### Lighting API integration (DMX / Art-Net / sACN)
+
+Popular control surfaces expose HTTP or OSC endpoints:
+
+| System | Protocol | Typical endpoint |
+|--------|----------|-----------------|
+| MA Lighting grandMA3 | HTTP + JSON | `POST /api/v1/cue/fire` |
+| ETC Eos | OSC (UDP) | `/eos/cue/{list}/{cue}/fire` |
+| QLC+ | HTTP REST | `GET /api/function?id=<id>&value=255` |
+| Node-red (generic) | HTTP | user-defined flow |
+
+Example adapter sketch (Node.js):
+
+```js
+import { BroadcastChannel } from 'node:worker_threads'
+import fetch from 'node-fetch'
+
+const channel = new BroadcastChannel('elegant-tide:your-project-id')
+
+channel.onmessage = async ({ data }) => {
+  if (data.kind !== 'cue.goto') return
+  const line = await fetchLine(data.payload.lineId)           // fetch from local DB or API
+  if (line.tags?.includes('light')) {
+    await fetch('http://qlcplus.local/api/function?id=42&value=255')
+  }
+}
+```
+
+### Sound API integration (OSC / HTTP)
+
+Common systems:
+
+| System | Protocol | Notes |
+|--------|----------|-------|
+| QLab (Figure 53) | OSC (UDP) | `/cue/{number}/start` — standard QLab OSC API |
+| Reaper DAW | OSC | `/action/{command_id}` |
+| Ableton Live | OSC | via LiveOSC or AbletonOSC |
+| SoundShow / Stagetracker | HTTP | vendor-specific REST |
+
+Example QLab adapter sketch:
+
+```js
+import osc from 'osc'
+
+const udpPort = new osc.UDPPort({ remoteAddress: '192.168.1.50', remotePort: 53000 })
+udpPort.open()
+
+channel.onmessage = async ({ data }) => {
+  if (data.kind !== 'cue.goto') return
+  const line = await fetchLine(data.payload.lineId)
+  if (line.tags?.includes('sound')) {
+    udpPort.send({ address: '/cue/next/start', args: [] })
+  }
+}
+```
+
+### Planned: built-in adapter UI
+
+A future settings panel will let the operator configure adapter endpoints directly from the Control page, eliminating the need for a separate Node.js process. The `tags` field and the BroadcastChannel event model are already stable — only the UI glue is pending.
+
+---
+
 - **7-day connectivity gate** — if a backend URL is configured and the app hasn't reached it for 7 days, it blocks the UI until reconnected. Pure-local mode (no backend URL set) is unaffected.
 
 - **Electron code signing** — the `electron-builder` config has no signing certificates. Unsigned builds will trigger OS security warnings on Windows and macOS. Add your certificates to the CI environment and the `build` config in `apps/desktop/package.json`.
@@ -450,3 +527,7 @@ GitHub Actions runs lint + typecheck + unit tests + web build on every push and 
 - **Google Play signing** — the Android build requires a keystore. This is not automated; it must be done manually in Android Studio or via Fastlane.
 
 - **`servers/api/.env.example`** — the file is not checked in (the repo's permission policy blocks dotfiles in writes); `start-backend.sh` writes a usable `.env` from an inline template on first run instead.
+
+- **Video rehearsal viewer (planned)** — a dedicated view that lets operators practice lighting and sound cue timing against a recorded video. The viewer would support local video files (via `<input type="file">`) and remote sources (YouTube, Vimeo, or a direct video URL). Playback controls are linked to subtitle line advancement so cue markers appear in sync with the video timeline.
+
+- **Cloud storage adapters (planned)** — allow projects and audio assets to be stored and served directly from cloud providers without requiring a self-hosted backend. Planned adapters: Google Drive, Microsoft OneDrive, Amazon S3 (and compatible: R2, MinIO), Dropbox. The frontend would authenticate directly with the provider (OAuth PKCE for Drive/OneDrive, presigned URLs for S3) and read/write project JSON and media files client-side. This enables fully serverless deployments where the backend is only needed for real-time sync and translation services.

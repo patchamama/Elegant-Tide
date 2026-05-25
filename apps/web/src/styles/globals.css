@@ -4,10 +4,14 @@
   /* Brand palette */
   --color-brand-50: oklch(97% 0.02 250);
   --color-brand-100: oklch(93% 0.04 250);
+  --color-brand-300: oklch(78% 0.12 250);
+  --color-brand-400: oklch(68% 0.15 250);
   --color-brand-500: oklch(55% 0.18 250);
   --color-brand-600: oklch(48% 0.18 250);
   --color-brand-700: oklch(40% 0.18 250);
+  --color-brand-800: oklch(32% 0.15 250);
   --color-brand-900: oklch(22% 0.12 250);
+  --color-brand-950: oklch(14% 0.08 250);
 
   /* Theater dark theme */
   --color-stage-bg: oklch(8% 0.02 250);

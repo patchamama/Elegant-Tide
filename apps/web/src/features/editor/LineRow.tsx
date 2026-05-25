@@ -1,8 +1,8 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { suggestTranslation } from '@/lib/translateApi'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { SubtitleLine, LangCode, LineType, MediaSourceType } from '@elegant-tide/core-types'
+import type { SubtitleLine, LangCode, LineType, MediaSourceType, CueMarker, CueKind } from '@elegant-tide/core-types'
 import { useEditorStore } from '@/stores/useEditorStore'
 import {
   MessageSquare,
@@ -21,8 +21,26 @@ import {
   Sparkles,
   Loader2,
   Square,
+  Bookmark,
+  Volume2,
+  Lightbulb,
+  ChevronDown,
+  PlayCircle,
+  StopCircle,
+  Zap,
 } from 'lucide-react'
 import { clsx } from 'clsx'
+
+function normalize(s: string) {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+}
+
+export interface OpenRange {
+  rangeId: string
+  kind: 'sound' | 'light'
+  name: string
+  startLineId: string
+}
 
 interface LineRowProps {
   line: SubtitleLine
@@ -33,6 +51,14 @@ interface LineRowProps {
   index: number
   isDragging?: boolean
   showNotes?: boolean
+  searchQuery?: string
+  selectedColumn?: string | null
+  isActiveMatch?: boolean
+  isBookmarked?: boolean
+  onBookmark?: ((lineId: string) => void) | undefined
+  canEditSubtitles?: boolean
+  canEditComments?: boolean
+  openRanges?: OpenRange[]
 }
 
 const TYPE_ICONS: Record<LineType, React.ElementType> = {
@@ -72,6 +98,14 @@ export function LineRow({
   index,
   isDragging = false,
   showNotes = false,
+  searchQuery = '',
+  selectedColumn = null,
+  isActiveMatch = false,
+  isBookmarked = false,
+  onBookmark,
+  canEditSubtitles = true,
+  canEditComments = true,
+  openRanges = [],
 }: LineRowProps) {
   const {
     selectLine,
@@ -98,6 +132,7 @@ export function LineRow({
   // Split state
   const [splitMode, setSplitMode] = useState<{ lang: LangCode; pos: number } | null>(null)
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
+  const [isEditing, setIsEditing] = useState(false)
 
   // Type picker dropdown
   const [showTypePicker, setShowTypePicker] = useState(false)
@@ -129,13 +164,15 @@ export function LineRow({
 
   const rowBg = isDragging
     ? 'bg-slate-800/50 border-slate-700'
-    : line.type === 'comment'
-      ? 'bg-amber-950/20 border-amber-900/20'
-      : line.type === 'media'
-        ? 'bg-purple-950/20 border-purple-900/20'
-        : isSelected
-          ? 'bg-brand-950/30 border-brand-800/40'
-          : 'bg-transparent border-slate-800/60 hover:bg-slate-900/40'
+    : isActiveMatch
+      ? 'bg-yellow-900/20 border-yellow-700/40'
+      : line.type === 'comment'
+        ? 'bg-amber-950/20 border-amber-900/20'
+        : line.type === 'media'
+          ? 'bg-purple-950/20 border-purple-900/20'
+          : isSelected
+            ? 'bg-brand-950/30 border-brand-800/40'
+            : 'bg-transparent border-slate-800/60 hover:bg-slate-900/40'
 
   return (
     <div
@@ -145,6 +182,7 @@ export function LineRow({
       className={clsx(
         'group flex items-start gap-1 px-3 py-2 border-b transition-colors',
         rowBg,
+        isEditing && 'ring-1 ring-inset ring-brand-600/30 z-10 relative',
       )}
       onClick={() => selectLine(line.id, false)}
     >
@@ -157,10 +195,21 @@ export function LineRow({
         <GripVertical size={14} />
       </div>
 
-      {/* Line number */}
-      <div className="w-7 pt-2.5 text-xs text-slate-700 text-right select-none flex-shrink-0 tabular-nums">
-        {index + 1}
-      </div>
+      {/* Line number — click to bookmark */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onBookmark?.(line.id) }}
+        className={clsx(
+          'w-7 pt-2.5 text-xs text-right select-none flex-shrink-0 tabular-nums transition-colors group/num',
+          isBookmarked ? 'text-brand-400' : 'text-slate-700 hover:text-slate-400',
+        )}
+        title={isBookmarked ? 'Remove bookmark' : 'Bookmark this line'}
+      >
+        {isBookmarked
+          ? <Bookmark size={12} className="ml-auto fill-brand-400 text-brand-400" />
+          : <span className="group-hover/num:hidden">{index + 1}</span>
+        }
+        {!isBookmarked && <Bookmark size={12} className="ml-auto hidden group-hover/num:block text-slate-600" />}
+      </button>
 
       {/* Type icon + picker */}
       <div className="w-7 pt-2 flex-shrink-0 flex justify-center relative">
@@ -172,32 +221,47 @@ export function LineRow({
           <TypeIcon size={13} />
         </button>
         {showTypePicker && (
-          <div className="absolute left-0 top-6 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-30 py-1 min-w-32">
-            {(['subtitle', 'comment', 'media'] as LineType[]).map((t) => {
-              const Icon = TYPE_ICONS[t]
-              return (
-                <button
-                  key={t}
-                  onClick={(e) => { e.stopPropagation(); handleTypeChange(t) }}
-                  className={clsx(
-                    'w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-slate-700 transition-colors',
-                    line.type === t ? 'text-white' : 'text-slate-400',
-                  )}
-                >
-                  <Icon size={12} className={TYPE_COLORS[t]} />
-                  {TYPE_LABELS[t]}
-                  {line.type === t && <Check size={11} className="ml-auto text-brand-400" />}
-                </button>
-              )
-            })}
-          </div>
+          <>
+            <div className="fixed inset-0 z-20" onClick={(e) => { e.stopPropagation(); setShowTypePicker(false) }} />
+            <div className="absolute left-0 top-6 z-30 py-1 min-w-32 rounded-xl border border-slate-600 shadow-2xl"
+              style={{ backgroundColor: 'rgb(30 41 59)' }}>
+              {(['subtitle', 'comment', 'media'] as LineType[]).map((t) => {
+                const Icon = TYPE_ICONS[t]
+                return (
+                  <button
+                    key={t}
+                    onClick={(e) => { e.stopPropagation(); handleTypeChange(t) }}
+                    className={clsx(
+                      'w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-slate-700 transition-colors',
+                      line.type === t ? 'text-white' : 'text-slate-400',
+                    )}
+                  >
+                    <Icon size={12} className={TYPE_COLORS[t]} />
+                    {TYPE_LABELS[t]}
+                    {line.type === t && <Check size={11} className="ml-auto text-brand-400" />}
+                  </button>
+                )
+              })}
+            </div>
+          </>
         )}
       </div>
 
+      {/* Notes column */}
+      {showNotes && (
+        <NoteCell
+          comment={line.comment ?? ''}
+          searchQuery={searchQuery}
+          selectedColumn={selectedColumn}
+          canEdit={canEditComments}
+          onChange={(v) => void updateComment(line.id, v)}
+        />
+      )}
+
       {/* Content cells */}
-      <div className="flex-1 flex gap-1 min-w-0">
+      <div className="flex-1 flex min-w-0 divide-x divide-slate-800/60">
         {line.type === 'comment' ? (
-          <CommentCell line={line} />
+          <CommentCell line={line} canEdit={canEditComments} openRanges={openRanges} />
         ) : line.type === 'media' ? (
           <MediaCell line={line} />
         ) : line.type === 'blackout' ? (
@@ -218,24 +282,14 @@ export function LineRow({
               onConfirmSplit={confirmSplit}
               onCancelSplit={() => setSplitMode(null)}
               textareaRef={(el) => { textareaRefs.current[lang] = el }}
+              searchQuery={searchQuery}
+              selectedColumn={selectedColumn}
+              canEdit={canEditSubtitles}
+              onFocusChange={(f) => setIsEditing(f)}
             />
           ))
         )}
       </div>
-
-      {/* Notes column */}
-      {showNotes && (
-        <div className="w-44 flex-shrink-0">
-          <textarea
-            value={line.comment ?? ''}
-            onChange={(e) => void updateComment(line.id, e.target.value)}
-            rows={2}
-            placeholder="Note…"
-            className="w-full bg-transparent text-slate-500 text-xs italic resize-none outline-none placeholder-slate-700 focus:bg-slate-800/40 rounded px-1 py-0.5 transition-colors"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-      )}
 
       {/* Action buttons */}
       <div className="flex-shrink-0 flex items-center gap-0.5 pt-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -288,6 +342,10 @@ interface SubtitleCellProps {
   onConfirmSplit: () => void
   onCancelSplit: () => void
   textareaRef: (el: HTMLTextAreaElement | null) => void
+  searchQuery?: string
+  selectedColumn?: string | null
+  canEdit?: boolean
+  onFocusChange?: (focused: boolean) => void
 }
 
 function SubtitleCell({
@@ -300,8 +358,25 @@ function SubtitleCell({
   onConfirmSplit,
   onCancelSplit,
   textareaRef,
+  searchQuery = '',
+  selectedColumn = null,
+  canEdit = true,
+  onFocusChange,
 }: SubtitleCellProps) {
   const [suggesting, setSuggesting] = useState(false)
+  const [focused, setFocused] = useState(false)
+  const remoteText = line.translations[lang] ?? ''
+  const [localText, setLocalText] = useState(remoteText)
+
+  // Sync from DB only when not focused (avoid overwriting in-progress edits)
+  useEffect(() => {
+    if (!focused) setLocalText(remoteText)
+  }, [remoteText, focused])
+
+  const q = normalize(searchQuery.trim())
+  const isSelectedColumn = selectedColumn === lang
+  const columnActive = !selectedColumn || isSelectedColumn
+  const hasMatch = q !== '' && columnActive && normalize(remoteText).includes(q)
 
   const handleSuggest = useCallback(async () => {
     const sourceText = line.translations[primaryLang]
@@ -309,12 +384,12 @@ function SubtitleCell({
     setSuggesting(true)
     try {
       const result = await suggestTranslation(sourceText, primaryLang, lang)
-      if (result) onTextChange(result)
+      if (result) { onTextChange(result); setLocalText(result) }
     } finally {
       setSuggesting(false)
     }
   }, [line.translations, primaryLang, lang, onTextChange])
-  const text = line.translations[lang] ?? ''
+  const text = localText
   const isActiveSplit = splitMode?.lang === lang
   const pos = splitMode?.pos ?? 0
 
@@ -369,11 +444,16 @@ function SubtitleCell({
   }
 
   return (
-    <div className="flex-1 min-w-0 relative group/cell">
+    <div className={clsx(
+      'flex-1 min-w-0 relative group/cell px-1 rounded transition-colors',
+      focused ? 'bg-slate-800/70 ring-1 ring-brand-600/50' : hasMatch ? 'bg-yellow-900/15' : isSelectedColumn ? 'bg-brand-950/25' : '',
+    )}>
       <textarea
         ref={textareaRef}
         value={text}
-        onChange={(e) => onTextChange(e.target.value)}
+        onChange={(e) => { setLocalText(e.target.value); onTextChange(e.target.value) }}
+        onFocus={() => { setFocused(true); onFocusChange?.(true) }}
+        onBlur={() => { setFocused(false); onFocusChange?.(false) }}
         onKeyDown={(e) => {
           if (e.key === 'Escape' && splitMode) onCancelSplit()
           if (e.key === 'Enter' && splitMode?.lang === lang) {
@@ -381,9 +461,13 @@ function SubtitleCell({
             onConfirmSplit()
           }
         }}
-        rows={2}
+        rows={focused ? 4 : 2}
         placeholder={`[${lang.toUpperCase()}]`}
-        className="w-full bg-transparent text-slate-100 text-sm resize-none outline-none placeholder-slate-700 focus:bg-slate-800/50 rounded px-1 py-0.5 transition-colors"
+        readOnly={!canEdit}
+        className={clsx(
+          'w-full bg-transparent text-sm resize-none outline-none placeholder-slate-700 rounded px-1 py-0.5 transition-colors',
+          canEdit ? 'text-slate-100' : 'text-slate-500 cursor-default',
+        )}
         onClick={(e) => e.stopPropagation()}
       />
       {lang !== primaryLang && !text && (
@@ -402,19 +486,389 @@ function SubtitleCell({
   )
 }
 
-function CommentCell({ line }: { line: SubtitleLine }) {
-  const { updateComment } = useEditorStore()
+function NoteCell({ comment, searchQuery, selectedColumn, canEdit = true, onChange }: { comment: string; searchQuery: string; selectedColumn?: string | null; canEdit?: boolean; onChange: (v: string) => void }) {
+  const [focused, setFocused] = useState(false)
+  const [localComment, setLocalComment] = useState(comment)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (!focused) setLocalComment(comment)
+  }, [comment, focused])
+
+  const q = normalize(searchQuery.trim())
+  const isSelectedColumn = selectedColumn === 'comments'
+  const columnActive = !selectedColumn || isSelectedColumn
+  const hasMatch = q !== '' && columnActive && normalize(comment).includes(q)
+
+  const insertAtCursor = (icon: string) => {
+    const el = textareaRef.current
+    if (!el) return
+    const start = el.selectionStart ?? localComment.length
+    const end = el.selectionEnd ?? localComment.length
+    const next = localComment.slice(0, start) + icon + localComment.slice(end)
+    setLocalComment(next)
+    onChange(next)
+    // Restore cursor after icon
+    requestAnimationFrame(() => {
+      el.selectionStart = el.selectionEnd = start + icon.length
+      el.focus()
+    })
+  }
+
   return (
-    <div className="flex-1 min-w-0">
+    <div className={clsx(
+      'w-44 flex-shrink-0 border-r border-slate-800/60 pr-1 rounded transition-colors',
+      focused ? 'bg-slate-800/70 ring-1 ring-brand-600/50' : hasMatch ? 'bg-yellow-900/15' : isSelectedColumn ? 'bg-brand-950/25' : '',
+    )}>
+      {focused && canEdit && (
+        <div className="flex gap-0.5 px-1 pt-0.5">
+          <button
+            onMouseDown={(e) => { e.preventDefault(); insertAtCursor('🔊') }}
+            className="text-slate-500 hover:text-sky-400 transition-colors text-xs px-1 rounded hover:bg-slate-700"
+            title="Insert sound cue marker"
+          >
+            <Volume2 size={10} />
+          </button>
+          <button
+            onMouseDown={(e) => { e.preventDefault(); insertAtCursor('💡') }}
+            className="text-slate-500 hover:text-yellow-400 transition-colors text-xs px-1 rounded hover:bg-slate-700"
+            title="Insert light cue marker"
+          >
+            <Lightbulb size={10} />
+          </button>
+        </div>
+      )}
       <textarea
-        value={line.comment ?? ''}
-        onChange={(e) => void updateComment(line.id, e.target.value)}
-        rows={2}
-        placeholder="Stage direction / note (not projected)…"
-        className="w-full bg-transparent text-amber-300/80 text-sm italic resize-none outline-none placeholder-amber-900/40 px-1 py-0.5"
+        ref={textareaRef}
+        value={localComment}
+        onChange={(e) => { setLocalComment(e.target.value); onChange(e.target.value) }}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        readOnly={!canEdit}
+        rows={focused ? 4 : 2}
+        placeholder={canEdit ? 'Note…' : ''}
+        className={clsx(
+          'w-full bg-transparent text-xs italic resize-none outline-none placeholder-slate-700 rounded px-1 py-0.5 transition-colors',
+          canEdit ? 'text-slate-500' : 'text-slate-600 cursor-default',
+        )}
         onClick={(e) => e.stopPropagation()}
       />
     </div>
+  )
+}
+
+const AUDIO_KEYWORDS = /klingeln|musik|echo/i
+
+type CuePopupState =
+  | { phase: 'menu'; kind: CueKind }
+  | { phase: 'name-start'; kind: CueKind; name: string }
+  | { phase: 'name-point'; kind: CueKind; name: string }
+  | null
+
+function CueIcon({ kind, size = 11 }: { kind: CueKind; size?: number }) {
+  return kind === 'sound' ? <Volume2 size={size} /> : <Lightbulb size={size} />
+}
+
+const CUE_COLORS: Record<CueKind, { bg: string; text: string; border: string; active: string }> = {
+  sound: { bg: 'bg-sky-950/30', text: 'text-sky-300', border: 'border-sky-700/50', active: 'bg-sky-900/60' },
+  light: { bg: 'bg-yellow-950/30', text: 'text-yellow-300', border: 'border-yellow-700/50', active: 'bg-yellow-900/60' },
+}
+
+function CommentCell({ line, canEdit = true, openRanges = [] }: { line: SubtitleLine; canEdit?: boolean; openRanges?: OpenRange[] }) {
+  const { updateComment, updateTags, updateCues } = useEditorStore()
+  const tags = line.tags ?? []
+  const cues = line.cues ?? []
+  const remoteComment = line.comment ?? ''
+  const [localComment, setLocalComment] = useState(remoteComment)
+  const [commentFocused, setCommentFocused] = useState(false)
+  const [cuePopup, setCuePopup] = useState<CuePopupState>(null)
+
+  useEffect(() => {
+    if (!commentFocused) setLocalComment(remoteComment)
+  }, [remoteComment, commentFocused])
+
+  const hasSoundTag = tags.includes('sound')
+  const hasLightTag = tags.includes('light')
+  const hasAudioKeyword = AUDIO_KEYWORDS.test(localComment)
+
+  // Cues on this line grouped by kind
+  const soundCues = cues.filter((c) => c.kind === 'sound')
+  const lightCues = cues.filter((c) => c.kind === 'light')
+
+  // Whether a range of each kind is currently active (started before, not ended)
+  const soundRangeActive = openRanges.some((r) => r.kind === 'sound')
+  const lightRangeActive = openRanges.some((r) => r.kind === 'light')
+
+  const addCue = useCallback((marker: CueMarker) => {
+    void updateCues(line.id, [...cues, marker])
+    // Also set the tag so existing highlight logic keeps working
+    const tag = marker.kind
+    if (!tags.includes(tag)) void updateTags(line.id, [...tags, tag])
+  }, [cues, tags, line.id, updateCues, updateTags])
+
+  const removeCue = useCallback((id: string) => {
+    const next = cues.filter((c) => c.id !== id)
+    void updateCues(line.id, next)
+  }, [cues, line.id, updateCues])
+
+  const handleCueMenuClick = (e: React.MouseEvent, kind: CueKind) => {
+    e.stopPropagation()
+    if (!canEdit) return
+    // If there's an open range of this kind, first suggest closing it
+    const openRange = openRanges.find((r) => r.kind === kind)
+    if (openRange) {
+      // Auto-suggest closing: add a range-end marker for the open range
+      addCue({
+        id: crypto.randomUUID(),
+        kind,
+        markerType: 'range-end',
+        name: openRange.name,
+        rangeId: openRange.rangeId,
+      })
+      return
+    }
+    setCuePopup({ phase: 'menu', kind })
+  }
+
+  const commitCue = (popup: CuePopupState) => {
+    if (!popup || popup.phase === 'menu') return
+    if (popup.phase === 'name-point') {
+      addCue({ id: crypto.randomUUID(), kind: popup.kind, markerType: 'point', name: popup.name })
+    } else if (popup.phase === 'name-start') {
+      const rangeId = crypto.randomUUID()
+      addCue({ id: crypto.randomUUID(), kind: popup.kind, markerType: 'range-start', name: popup.name, rangeId })
+    }
+    setCuePopup(null)
+  }
+
+  // Detect if this line has range-start/end cues that are "active" (show colored indicator)
+  const activeSoundRangeMarker = soundCues.find((c) => c.markerType === 'range-start' || c.markerType === 'range-end')
+  const activeLightRangeMarker = lightCues.find((c) => c.markerType === 'range-start' || c.markerType === 'range-end')
+
+  const rowBgClass = clsx(
+    hasSoundTag && hasLightTag ? 'bg-gradient-to-r from-sky-950/40 to-yellow-950/40' :
+    hasSoundTag ? 'bg-sky-950/30' :
+    hasLightTag ? 'bg-yellow-950/30' : '',
+  )
+
+  return (
+    <div className={clsx('flex-1 min-w-0 flex flex-col gap-0.5 px-1 py-0.5', rowBgClass)}>
+      {/* Cue markers row */}
+      <div className="flex items-center gap-1 flex-wrap">
+        {hasAudioKeyword && soundCues.length === 0 && !hasSoundTag && (
+          <span className="flex items-center gap-0.5 px-1 py-0.5 rounded text-xs text-sky-400/60 border border-sky-800/40 bg-sky-950/20" title="Audio keyword detected">
+            <Volume2 size={10} />
+          </span>
+        )}
+
+        {/* Existing cue markers on this line */}
+        {cues.map((cue) => {
+          const colors = CUE_COLORS[cue.kind]
+          const Icon = cue.kind === 'sound' ? Volume2 : Lightbulb
+          const MarkerIcon = cue.markerType === 'range-start' ? PlayCircle : cue.markerType === 'range-end' ? StopCircle : Zap
+          return (
+            <span key={cue.id} className={clsx('group/cue flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs border', colors.active, colors.text, colors.border)}>
+              <MarkerIcon size={9} />
+              <Icon size={9} />
+              <span className="max-w-20 truncate">{cue.name || (cue.markerType === 'point' ? 'cue' : cue.markerType === 'range-start' ? 'start' : 'end')}</span>
+              {canEdit && (
+                <button onClick={(e) => { e.stopPropagation(); removeCue(cue.id) }} className="ml-0.5 opacity-0 group-hover/cue:opacity-100 transition-opacity hover:text-red-400">
+                  <X size={9} />
+                </button>
+              )}
+            </span>
+          )
+        })}
+
+        {/* Open-range indicators (this line is INSIDE an active range) */}
+        {openRanges.map((r) => {
+          const colors = CUE_COLORS[r.kind]
+          const notClosedOnThisLine = !cues.find((c) => c.rangeId === r.rangeId && c.markerType === 'range-end')
+          if (!notClosedOnThisLine) return null
+          return (
+            <span key={r.rangeId} className={clsx('flex items-center gap-0.5 px-1 py-0.5 rounded-sm text-xs border-l-2', r.kind === 'sound' ? 'border-sky-500/60 text-sky-400/50' : 'border-yellow-500/60 text-yellow-400/50')}>
+              <CueIcon kind={r.kind} size={9} />
+              <span className="italic opacity-60 max-w-16 truncate">{r.name}</span>
+            </span>
+          )
+        })}
+
+        {/* Add cue buttons */}
+        {canEdit && (
+          <>
+            <div className="relative">
+              <button
+                onClick={(e) => handleCueMenuClick(e, 'sound')}
+                title={soundRangeActive ? 'Close open sound range' : 'Add sound cue'}
+                className={clsx(
+                  'flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs transition-colors',
+                  hasSoundTag || soundCues.length > 0
+                    ? clsx(CUE_COLORS.sound.active, CUE_COLORS.sound.text, CUE_COLORS.sound.border, 'border')
+                    : soundRangeActive
+                    ? 'text-sky-400/70 border border-sky-600/50 bg-sky-950/30'
+                    : 'text-slate-600 hover:text-sky-400 border border-transparent',
+                )}
+              >
+                <Volume2 size={11} />
+                {soundRangeActive && <StopCircle size={9} className="ml-0.5" />}
+                {!soundRangeActive && <ChevronDown size={9} className="ml-0.5" />}
+              </button>
+
+              {cuePopup?.kind === 'sound' && (
+                <CuePopup
+                  kind="sound"
+                  popup={cuePopup}
+                  onSelect={(phase) => setCuePopup({ phase, kind: 'sound', name: '' })}
+                  onNameChange={(name) => setCuePopup((p) => p && p.phase !== 'menu' ? { ...p, name } : p)}
+                  onCommit={() => commitCue(cuePopup)}
+                  onClose={() => setCuePopup(null)}
+                />
+              )}
+            </div>
+
+            <div className="relative">
+              <button
+                onClick={(e) => handleCueMenuClick(e, 'light')}
+                title={lightRangeActive ? 'Close open light range' : 'Add light cue'}
+                className={clsx(
+                  'flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs transition-colors',
+                  hasLightTag || lightCues.length > 0
+                    ? clsx(CUE_COLORS.light.active, CUE_COLORS.light.text, CUE_COLORS.light.border, 'border')
+                    : lightRangeActive
+                    ? 'text-yellow-400/70 border border-yellow-600/50 bg-yellow-950/30'
+                    : 'text-slate-600 hover:text-yellow-400 border border-transparent',
+                )}
+              >
+                <Lightbulb size={11} />
+                {lightRangeActive && <StopCircle size={9} className="ml-0.5" />}
+                {!lightRangeActive && <ChevronDown size={9} className="ml-0.5" />}
+              </button>
+
+              {cuePopup?.kind === 'light' && (
+                <CuePopup
+                  kind="light"
+                  popup={cuePopup}
+                  onSelect={(phase) => setCuePopup({ phase, kind: 'light', name: '' })}
+                  onNameChange={(name) => setCuePopup((p) => p && p.phase !== 'menu' ? { ...p, name } : p)}
+                  onCommit={() => commitCue(cuePopup)}
+                  onClose={() => setCuePopup(null)}
+                />
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Inline range-close suggestion — if open range and no action yet */}
+      {openRanges.length > 0 && canEdit && cues.filter((c) => c.markerType === 'range-end').length === 0 && (
+        <div className="flex gap-1 flex-wrap">
+          {openRanges.map((r) => (
+            <button
+              key={r.rangeId}
+              onClick={(e) => { e.stopPropagation(); addCue({ id: crypto.randomUUID(), kind: r.kind, markerType: 'range-end', name: r.name, rangeId: r.rangeId }) }}
+              className={clsx(
+                'flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs border border-dashed transition-colors',
+                r.kind === 'sound' ? 'border-sky-700/40 text-sky-400/50 hover:text-sky-300 hover:border-sky-600' : 'border-yellow-700/40 text-yellow-400/50 hover:text-yellow-300 hover:border-yellow-600',
+              )}
+              title={`Close "${r.name}" range here`}
+            >
+              <StopCircle size={9} />
+              <CueIcon kind={r.kind} size={9} />
+              <span>End "{r.name}"?</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <textarea
+        value={localComment}
+        onChange={(e) => { setLocalComment(e.target.value); if (canEdit) void updateComment(line.id, e.target.value) }}
+        onFocus={() => setCommentFocused(true)}
+        onBlur={() => setCommentFocused(false)}
+        readOnly={!canEdit}
+        rows={commentFocused ? 4 : 2}
+        placeholder={canEdit ? 'Stage direction / note (not projected)…' : ''}
+        className={clsx(
+          'w-full bg-transparent text-sm italic resize-none outline-none placeholder-amber-900/40',
+          canEdit ? 'text-amber-300/80' : 'text-amber-300/40 cursor-default',
+        )}
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  )
+}
+
+function CuePopup({
+  kind,
+  popup,
+  onSelect,
+  onNameChange,
+  onCommit,
+  onClose,
+}: {
+  kind: CueKind
+  popup: CuePopupState
+  onSelect: (phase: 'name-start' | 'name-point') => void
+  onNameChange: (name: string) => void
+  onCommit: () => void
+  onClose: () => void
+}) {
+  if (!popup) return null
+  const colors = CUE_COLORS[kind]
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); onClose() }} />
+      <div
+        className="absolute left-0 top-7 z-50 w-52 rounded-xl border border-slate-600 shadow-2xl py-1"
+        style={{ backgroundColor: 'rgb(15 23 42)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {popup.phase === 'menu' && (
+          <>
+            <button
+              onClick={() => onSelect('name-point')}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-800 text-slate-300 transition-colors"
+            >
+              <Zap size={11} className={colors.text} />
+              Point cue
+            </button>
+            <button
+              onClick={() => onSelect('name-start')}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-800 text-slate-300 transition-colors"
+            >
+              <PlayCircle size={11} className={colors.text} />
+              Start range…
+            </button>
+          </>
+        )}
+        {(popup.phase === 'name-start' || popup.phase === 'name-point') && (
+          <div className="px-3 py-2 flex flex-col gap-2">
+            <div className="flex items-center gap-1.5 text-xs text-slate-400">
+              {popup.phase === 'name-start' ? <PlayCircle size={11} className={colors.text} /> : <Zap size={11} className={colors.text} />}
+              {popup.phase === 'name-start' ? 'Range name' : 'Cue name'} <span className="text-slate-600">(optional)</span>
+            </div>
+            <input
+              autoFocus
+              type="text"
+              value={popup.name}
+              onChange={(e) => onNameChange(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') onCommit(); if (e.key === 'Escape') onClose() }}
+              placeholder={popup.phase === 'name-start' ? 'e.g. Musik der Nacht' : 'e.g. Bell'}
+              className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 outline-none focus:border-slate-400"
+            />
+            <div className="flex gap-1">
+              <button onClick={onCommit} className={clsx('flex-1 py-1 rounded text-xs transition-colors', colors.active, colors.text)}>
+                Add
+              </button>
+              <button onClick={onClose} className="px-2 py-1 rounded text-xs text-slate-500 hover:text-slate-300 hover:bg-slate-800">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   )
 }
 

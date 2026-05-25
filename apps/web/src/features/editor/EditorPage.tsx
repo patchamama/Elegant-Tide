@@ -3,6 +3,10 @@ import { useParams, useNavigate, Link } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@elegant-tide/db'
+import { saveBookmarkLineId, loadBookmarkLineId, saveColumnState, loadColumnState } from '@/lib/projectionStorage'
+import { useProjectRole } from '@/hooks/useProjectRole'
+import { useLiveSync } from '@/hooks/useLiveSync'
+import { useProjectionStore } from '@/stores/useProjectionStore'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useEditorStore } from '@/stores/useEditorStore'
 import {
@@ -14,15 +18,28 @@ import {
   Settings,
   Globe,
   AlertTriangle,
+  Search,
+  ChevronUp,
+  ChevronDown,
+  X as XIcon,
+  UserCog,
+  Volume2,
+  Lightbulb,
+  Radio,
 } from 'lucide-react'
 import { LineList } from './LineList'
 import { ImportDialog } from './ImportDialog'
 import { ExportDialog } from './ExportDialog'
 import { ConflictsDrawer } from './ConflictsDrawer'
-import { useState } from 'react'
+import { useState, useMemo, useRef, useCallback } from 'react'
 import type { LangCode, SubtitleProject, ProjectionStyle } from '@elegant-tide/core-types'
 import { DEFAULT_PROJECTION_STYLE } from '@elegant-tide/core-types'
 import { X } from 'lucide-react'
+import { clsx } from 'clsx'
+
+function normalize(s: string) {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+}
 
 const ALL_LANGS: { code: LangCode; label: string }[] = [
   { code: 'en', label: 'English' },
@@ -38,13 +55,23 @@ export function EditorPage() {
   const { projectId } = useParams({ from: '/editor/$projectId' })
   const navigate = useNavigate()
   const { loadProject, updateProject } = useProjectStore()
-  const { addLine, selectedIds } = useEditorStore()
+  const { addLine, selectedIds, syncLines } = useEditorStore()
+  const { role, setRole, isMaster, canEditSubtitles, canEditComments } = useProjectRole(projectId)
+  // Listen for projection position from master (never sends when isMaster=false)
+  useLiveSync(projectId, false)
+  const currentLineId = useProjectionStore((s) => s.currentLineId)
   const [showImport, setShowImport] = useState(false)
   const [showExport, setShowExport] = useState(false)
   const [showLangPicker, setShowLangPicker] = useState(false)
   const [showProjectSettings, setShowProjectSettings] = useState(false)
   const [showConflicts, setShowConflicts] = useState(false)
-  const [showNotes, setShowNotes] = useState(false)
+  const [showNotes, setShowNotes] = useState<boolean>(() => loadColumnState(projectId)?.showNotes ?? false)
+  const [bookmarkLineId, setBookmarkLineId] = useState<string | null>(() => loadBookmarkLineId(projectId))
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchMatchIndex, setSearchMatchIndex] = useState(0)
+  const [selectedColumn, setSelectedColumn] = useState<LangCode | 'comments' | null>(null)
+  const [isFollowing, setIsFollowing] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Live queries — react instantly to DB changes
   const project = useLiveQuery(() => db.projects.get(projectId), [projectId])
@@ -67,6 +94,11 @@ export function EditorPage() {
     void loadProject(projectId)
   }, [projectId, loadProject])
 
+  // Keep editor store in sync with live lines so mutations (updateTranslation etc.) can find lines by id
+  useEffect(() => {
+    if (lines) syncLines(lines)
+  }, [lines]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleAddLine = async () => {
     await addLine(projectId)
   }
@@ -80,6 +112,12 @@ export function EditorPage() {
     }
   }
 
+  // Persist column visibility whenever it changes
+  useEffect(() => {
+    if (!project) return
+    saveColumnState(projectId, { languages: project.languages, showNotes })
+  }, [showNotes, project?.languages]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const toggleLanguage = async (lang: LangCode) => {
     if (!project) return
     const langs = project.languages.includes(lang)
@@ -89,6 +127,49 @@ export function EditorPage() {
     if (langs.length === 0) return
     await updateProject({ id: projectId, languages: langs })
   }
+
+  const searchMatches = useMemo(() => {
+    const q = normalize(searchQuery.trim())
+    if (!q || !lines) return []
+    return lines
+      .map((line, index) => {
+        let texts: string[] = []
+        if (selectedColumn === 'comments') {
+          if (showNotes && line.comment) texts = [line.comment]
+        } else if (selectedColumn) {
+          const t = line.translations[selectedColumn]
+          if (t) texts = [t]
+        } else {
+          texts = Object.values(line.translations)
+          if (showNotes && line.comment) texts.push(line.comment)
+        }
+        const matches = texts.some((t) => normalize(t).includes(q))
+        return matches ? { lineId: line.id, index } : null
+      })
+      .filter(Boolean) as { lineId: string; index: number }[]
+  }, [searchQuery, lines, showNotes, selectedColumn])
+
+  // Lines to next sound/light cue from current projection position
+  const { linesToNextSound, linesToNextLight } = useMemo(() => {
+    if (!lines || !currentLineId) return { linesToNextSound: null, linesToNextLight: null }
+    const idx = lines.findIndex((l) => l.id === currentLineId)
+    if (idx === -1) return { linesToNextSound: null, linesToNextLight: null }
+    const after = lines.slice(idx + 1)
+    const nextSound = after.findIndex((l) => l.tags?.includes('sound'))
+    const nextLight = after.findIndex((l) => l.tags?.includes('light'))
+    return {
+      linesToNextSound: nextSound === -1 ? null : nextSound + 1,
+      linesToNextLight: nextLight === -1 ? null : nextLight + 1,
+    }
+  }, [lines, currentLineId])
+
+
+  const activeMatch = searchMatches[searchMatchIndex] ?? null
+
+  const navigateSearch = useCallback((dir: 1 | -1) => {
+    if (searchMatches.length === 0) return
+    setSearchMatchIndex((i) => (i + dir + searchMatches.length) % searchMatches.length)
+  }, [searchMatches.length])
 
   if (project === undefined) {
     return (
@@ -126,6 +207,39 @@ export function EditorPage() {
 
         <div className="flex-1" />
 
+        {/* Search bar */}
+        <div className="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1">
+          <Search size={12} className="text-slate-500 flex-shrink-0" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => { setSearchQuery(e.target.value); setSearchMatchIndex(0) }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') navigateSearch(e.shiftKey ? -1 : 1)
+              if (e.key === 'Escape') { setSearchQuery(''); searchInputRef.current?.blur() }
+            }}
+            placeholder="Search…"
+            className="bg-transparent text-xs text-slate-200 outline-none placeholder-slate-600 w-36"
+          />
+          {searchQuery && (
+            <>
+              <span className="text-xs text-slate-500 tabular-nums min-w-8 text-center">
+                {searchMatches.length > 0 ? `${searchMatchIndex + 1}/${searchMatches.length}` : '0/0'}
+              </span>
+              <button onClick={() => navigateSearch(-1)} className="p-0.5 text-slate-400 hover:text-white transition-colors" title="Previous (Shift+Enter)">
+                <ChevronUp size={13} />
+              </button>
+              <button onClick={() => navigateSearch(1)} className="p-0.5 text-slate-400 hover:text-white transition-colors" title="Next (Enter)">
+                <ChevronDown size={13} />
+              </button>
+              <button onClick={() => { setSearchQuery(''); setSearchMatchIndex(0) }} className="p-0.5 text-slate-500 hover:text-white transition-colors">
+                <XIcon size={11} />
+              </button>
+            </>
+          )}
+        </div>
+
         {/* Language picker */}
         <div className="relative">
           <button
@@ -136,10 +250,9 @@ export function EditorPage() {
             {project.languages.map((l) => l.toUpperCase()).join(' · ')}
           </button>
           {showLangPicker && (
-            <div
-              className="absolute right-0 top-full mt-1 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl p-2 z-20 min-w-40"
-              onMouseLeave={() => setShowLangPicker(false)}
-            >
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowLangPicker(false)} />
+              <div className="absolute right-0 top-full mt-1 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl p-2 z-20 min-w-40">
               {ALL_LANGS.map(({ code, label }) => (
                 <button
                   key={code}
@@ -154,7 +267,16 @@ export function EditorPage() {
                   )}
                 </button>
               ))}
+              <hr className="border-slate-700 my-1" />
+              <button
+                onClick={() => setShowNotes((v) => !v)}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-slate-700 text-sm transition-colors"
+              >
+                <span className={showNotes ? 'text-white' : 'text-slate-400'}>Comments</span>
+                {showNotes && <span className="text-brand-400 text-xs">✓</span>}
+              </button>
             </div>
+            </>
           )}
         </div>
 
@@ -201,25 +323,59 @@ export function EditorPage() {
           {t('editor.addLine')}
         </button>
 
-        <button
-          onClick={() => void navigate({ to: '/control/$projectId', params: { projectId } })}
-          className="flex items-center gap-1.5 text-xs font-medium bg-brand-600 hover:bg-brand-500 text-white px-3 py-1.5 rounded-lg transition-colors"
-        >
-          <Play size={13} />
-          {t('control.title')}
-        </button>
+        {/* Role selector */}
+        <div className="flex items-center gap-1 border border-slate-700 rounded-lg px-1 py-0.5">
+          <UserCog size={12} className="text-slate-500 flex-shrink-0" />
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value as import('@elegant-tide/core-types').ProjectRole)}
+            className="bg-transparent text-xs text-slate-300 outline-none cursor-pointer"
+          >
+            <option value="master">Master</option>
+            <option value="sound">Sound</option>
+            <option value="lighting">Lighting</option>
+            <option value="viewer">Viewer</option>
+          </select>
+        </div>
+
+        {isMaster && (
+          <button
+            onClick={() => void navigate({ to: '/control/$projectId', params: { projectId } })}
+            className="flex items-center gap-1.5 text-xs font-medium bg-brand-600 hover:bg-brand-500 text-white px-3 py-1.5 rounded-lg transition-colors"
+          >
+            <Play size={13} />
+            {t('control.title')}
+          </button>
+        )}
       </header>
 
       {/* Column headers */}
       <div className="bg-slate-900/60 border-b border-slate-800 px-4 py-1.5 flex items-center gap-1 flex-shrink-0 text-xs text-slate-500 uppercase tracking-wider select-none">
         <div className="w-10 text-right">#</div>
         <div className="w-10" />
+        {showNotes && (
+          <button
+            onClick={() => setSelectedColumn(selectedColumn === 'comments' ? null : 'comments')}
+            className={clsx(
+              'w-44 flex-shrink-0 text-center normal-case tracking-normal border-r border-slate-800/60 pr-1 rounded py-0.5 transition-colors',
+              selectedColumn === 'comments' ? 'text-brand-400 bg-brand-950/30' : 'text-slate-600 hover:text-slate-400',
+            )}
+          >
+            Comments
+          </button>
+        )}
         {(project.languages as LangCode[]).map((lang) => (
-          <div key={lang} className="flex-1 text-center">
+          <button
+            key={lang}
+            onClick={() => setSelectedColumn(selectedColumn === lang ? null : lang as LangCode)}
+            className={clsx(
+              'flex-1 text-center border-r border-slate-800/60 last:border-r-0 rounded py-0.5 transition-colors',
+              selectedColumn === lang ? 'text-brand-400 bg-brand-950/30' : 'text-slate-500 hover:text-slate-300',
+            )}
+          >
             {lang.toUpperCase()}
-          </div>
+          </button>
         ))}
-        {showNotes && <div className="w-44 flex-shrink-0 text-center normal-case tracking-normal text-slate-600">Notes</div>}
         <div className="w-24" />
       </div>
 
@@ -236,6 +392,20 @@ export function EditorPage() {
             primaryLang={project.primaryLanguage as LangCode}
             projectId={projectId}
             showNotes={showNotes}
+            searchQuery={searchQuery}
+            selectedColumn={selectedColumn}
+            activeMatchLineId={activeMatch?.lineId ?? null}
+            activeMatchIndex={activeMatch?.index ?? null}
+            bookmarkLineId={bookmarkLineId}
+            canEditSubtitles={canEditSubtitles}
+            canEditComments={canEditComments}
+            followLineId={currentLineId}
+            isFollowing={isFollowing}
+            onBookmark={(lineId) => {
+              const next = bookmarkLineId === lineId ? null : lineId
+              setBookmarkLineId(next)
+              saveBookmarkLineId(projectId, next)
+            }}
           />
         )}
       </div>
@@ -288,11 +458,43 @@ export function EditorPage() {
         {blackoutCount > 0 && <><span>·</span><span>{blackoutCount} blackouts</span></>}
         {commentCount > 0 && <><span>·</span><span>{commentCount} comments</span></>}
 
+        {linesToNextSound !== null && (
+          <>
+            <span>·</span>
+            <span className="flex items-center gap-1 text-sky-400">
+              <Volume2 size={11} />
+              <span className="tabular-nums">{linesToNextSound}</span>
+            </span>
+          </>
+        )}
+        {linesToNextLight !== null && (
+          <>
+            <span>·</span>
+            <span className="flex items-center gap-1 text-yellow-400">
+              <Lightbulb size={11} />
+              <span className="tabular-nums">{linesToNextLight}</span>
+            </span>
+          </>
+        )}
+
         <div className="flex-1" />
 
         {selectedIds.size > 0 && (
           <span className="text-brand-400 tabular-nums">{selectedIds.size} selected</span>
         )}
+
+        <button
+          onClick={() => setIsFollowing(v => !v)}
+          title={isFollowing ? 'Stop following projection' : 'Follow projection'}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-colors ${
+            isFollowing
+              ? 'border-brand-600 text-brand-400 bg-brand-950/20'
+              : 'border-slate-700 text-slate-600 hover:text-slate-300 hover:border-slate-600'
+          }`}
+        >
+          <Radio size={11} />
+          Follow
+        </button>
 
         <button
           onClick={() => setShowNotes(v => !v)}

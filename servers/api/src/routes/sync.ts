@@ -1,7 +1,46 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyReply } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import type { MediaPayload, SubtitleLine } from '@elegant-tide/core-types'
+
+// ── SSE fan-out registry ──────────────────────────────────────────────────────
+// Maps projectId → set of active SSE reply objects.
+// This is intentionally process-local (no Redis). If you scale to multiple
+// instances, replace with a pub/sub broker.
+const sseClients = new Map<string, Set<FastifyReply>>()
+
+function addClient(projectId: string, reply: FastifyReply) {
+  if (!sseClients.has(projectId)) sseClients.set(projectId, new Set())
+  sseClients.get(projectId)!.add(reply)
+}
+
+function removeClient(projectId: string, reply: FastifyReply) {
+  sseClients.get(projectId)?.delete(reply)
+}
+
+// Last known cue per project — serves polling fallback and late-joiners
+const lastCue = new Map<string, CuePayload>()
+
+export function broadcastCue(projectId: string, payload: CuePayload) {
+  lastCue.set(projectId, payload)
+  const clients = sseClients.get(projectId)
+  if (!clients || clients.size === 0) return
+  const data = `data: ${JSON.stringify(payload)}\n\n`
+  for (const reply of clients) {
+    try {
+      reply.raw.write(data)
+    } catch {
+      // client disconnected mid-write; will be cleaned up on close event
+    }
+  }
+}
+
+export interface CuePayload {
+  kind: 'cue.goto' | 'cue.ping'
+  lineId: string | null
+  sentAt: number
+  fromRole: string
+}
 
 const LineUpsertSchema = z.object({
   id: z.string(),
@@ -152,6 +191,110 @@ export async function syncRoutes(app: FastifyInstance) {
 
     return { results }
   })
+
+  // ── SSE live stream ───────────────────────────────────────────────────────
+  // GET /sync/live/:projectId
+  // Clients connect here and receive real-time cue.goto events as SSE.
+  // Auth: Bearer token in Authorization header OR ?token= query param (for
+  // EventSource which cannot set custom headers in the browser).
+  app.get('/sync/live/:projectId', async (req, reply) => {
+    // Auth: try cookie first (jwtVerify), then ?token= query param
+    try {
+      await req.jwtVerify()
+      req.userId = (req.user as { sub: string }).sub
+    } catch {
+      const { token } = req.query as { token?: string }
+      if (!token) return reply.code(401).send({ error: 'Unauthorized' })
+      try {
+        const decoded = app.jwt.verify<{ sub: string }>(token)
+        req.userId = decoded.sub
+      } catch {
+        return reply.code(401).send({ error: 'Unauthorized' })
+      }
+    }
+
+    const { projectId } = req.params as { projectId: string }
+
+    // Verify access
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        deletedAt: null,
+        OR: [
+          { ownerId: req.userId },
+          { collaborators: { some: { userId: req.userId } } },
+        ],
+      },
+      select: { id: true },
+    })
+    if (!project) return reply.code(403).send({ error: 'Access denied' })
+
+    // Set SSE headers and keep connection open
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no', // disable nginx buffering
+    })
+    reply.raw.write(': connected\n\n')
+
+    addClient(projectId, reply)
+
+    // Heartbeat every 25s to prevent proxy timeouts
+    const heartbeat = setInterval(() => {
+      try {
+        reply.raw.write(': ping\n\n')
+      } catch {
+        clearInterval(heartbeat)
+      }
+    }, 25_000)
+
+    req.raw.on('close', () => {
+      clearInterval(heartbeat)
+      removeClient(projectId, reply)
+    })
+
+    // Never resolve — connection stays open
+    await new Promise<void>(() => {})
+  })
+
+  // POST /sync/cue  { projectId, lineId, fromRole }
+  // Master sends current projection position; server fans out to SSE clients.
+  // Also persists the last cue so late-joining clients can GET it.
+  const CueBody = z.object({
+    projectId: z.string(),
+    lineId: z.string().nullable(),
+    fromRole: z.string().default('master'),
+  })
+
+  app.post('/sync/cue', auth, async (req, reply) => {
+    const { projectId, lineId, fromRole } = CueBody.parse(req.body)
+
+    // Verify write access
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        deletedAt: null,
+        OR: [
+          { ownerId: req.userId },
+          { collaborators: { some: { userId: req.userId, role: { in: ['author', 'translator'] } } } },
+        ],
+      },
+      select: { id: true },
+    })
+    if (!project) return reply.code(403).send({ error: 'Access denied' })
+
+    const payload: CuePayload = { kind: 'cue.goto', lineId, sentAt: Date.now(), fromRole }
+    broadcastCue(projectId, payload)
+    return { ok: true, payload }
+  })
+
+  // GET /sync/current-cue/:projectId — polling fallback
+  app.get('/sync/current-cue/:projectId', auth, async (req) => {
+    const { projectId } = req.params as { projectId: string }
+    return { cue: lastCue.get(projectId) ?? null }
+  })
+
 }
 
 type DbLine = Awaited<ReturnType<typeof prisma.line.findMany>>[number]

@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useParams } from '@tanstack/react-router'
 import { createBus } from '@elegant-tide/broadcast-protocol'
-import type { SubtitleLine, LangCode, ProjectionStyle, MediaPayload } from '@elegant-tide/core-types'
+import type { SubtitleLine, LangCode, ProjectionChannel, ProjectionStyle, MediaPayload } from '@elegant-tide/core-types'
 import { DEFAULT_PROJECTION_STYLE } from '@elegant-tide/core-types'
-import { linesRepo } from '@elegant-tide/db'
+import { linesRepo, db } from '@elegant-tide/db'
 import ReactPlayer from 'react-player'
 import { Settings, X } from 'lucide-react'
+import { saveCurrentLineId, loadCurrentLineId } from '@/lib/projectionStorage'
 
 const LANG_OPTIONS: { value: LangCode; label: string }[] = [
   { value: 'en', label: 'English' },
@@ -22,19 +23,43 @@ export function ProjectorPage() {
 
   const [currentLine, setCurrentLine] = useState<SubtitleLine | null>(null)
   const [blackout, setBlackout] = useState(false)
-  const [language, setLanguage] = useState<LangCode>('en')
+  const [language, setLanguage] = useState<ProjectionChannel>('en')
   const [style, setStyle] = useState<ProjectionStyle>(DEFAULT_PROJECTION_STYLE)
   const [showSettings, setShowSettings] = useState(false)
   const [showMedia, setShowMedia] = useState(true)
   const settingsHideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const busRef = useRef<ReturnType<typeof createBus> | null>(null)
+  const allLinesRef = useRef<SubtitleLine[]>([])
 
   const myWindowId = useRef(`projector-${crypto.randomUUID().slice(0, 8)}`)
 
   useEffect(() => {
     const bus = createBus({ projectId, windowId: myWindowId.current, role: 'projector' })
+    busRef.current = bus
 
     bus.send({ kind: 'hello', payload: { role: 'projector', windowId: myWindowId.current, userAgent: navigator.userAgent } })
     bus.send({ kind: 'state.request', payload: {} })
+
+    // Load all lines for local next/prev navigation
+    void db.lines
+      .where('[projectId+order]')
+      .between([projectId, -Infinity], [projectId, Infinity])
+      .filter((l) => !l.deletedAt && l.type !== 'comment')
+      .sortBy('order')
+      .then((ls) => {
+        allLinesRef.current = ls
+        // Restore last position if no state.snapshot comes within 300ms
+        const saved = loadCurrentLineId(projectId)
+        if (saved) {
+          setTimeout(() => {
+            setCurrentLine((cur) => {
+              if (cur) return cur
+              const found = ls.find((l) => l.id === saved)
+              return found ?? null
+            })
+          }, 300)
+        }
+      })
 
     const unsubGoto = bus.on('cue.goto', async (env) => {
       const line = await linesRepo.get(env.msg.payload.lineId)
@@ -68,8 +93,31 @@ export function ProjectorPage() {
     return () => {
       unsubGoto(); unsubBlackout(); unsubSnapshot(); unsubConfig(); unsubLineUpdated()
       bus.close()
+      busRef.current = null
     }
   }, [projectId])
+
+  const navigateProjector = useCallback((dir: 1 | -1) => {
+    const lines = allLinesRef.current
+    if (lines.length === 0) return
+    setCurrentLine((cur) => {
+      const idx = cur ? lines.findIndex((l) => l.id === cur.id) : -1
+      const next = lines[idx + dir]
+      if (!next) return cur
+      saveCurrentLineId(projectId, next.id)
+      busRef.current?.send({ kind: 'cue.goto', payload: { lineId: next.id } })
+      return next
+    })
+  }, [projectId])
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.code === 'ArrowRight' || e.code === 'ArrowDown' || e.code === 'Space') { e.preventDefault(); navigateProjector(1) }
+      if (e.code === 'ArrowLeft' || e.code === 'ArrowUp') { e.preventDefault(); navigateProjector(-1) }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [navigateProjector])
 
   // Auto-hide settings overlay after 3s of no interaction
   const revealSettings = () => {
@@ -78,7 +126,11 @@ export function ProjectorPage() {
     settingsHideTimeout.current = setTimeout(() => setShowSettings(false), 3000)
   }
 
-  const text = (!blackout && currentLine?.type !== 'media') ? (currentLine?.translations[language] ?? '') : ''
+  const text = (!blackout && currentLine?.type !== 'media')
+    ? language === 'comment'
+      ? (currentLine?.comment ?? '')
+      : (currentLine?.translations[language as LangCode] ?? '')
+    : ''
   const media: MediaPayload | undefined = currentLine?.type === 'media' ? currentLine.media : undefined
 
   return (
@@ -149,9 +201,10 @@ export function ProjectorPage() {
             <span className="text-slate-400 text-xs block mb-1">Language</span>
             <select
               value={language}
-              onChange={(e) => setLanguage(e.target.value as LangCode)}
+              onChange={(e) => setLanguage(e.target.value as ProjectionChannel)}
               className="w-full bg-white/10 border border-white/10 rounded-lg px-2 py-1.5 text-sm outline-none"
             >
+              <option value="comment" className="bg-slate-900">Comments</option>
               {LANG_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value} className="bg-slate-900">{o.label}</option>
               ))}

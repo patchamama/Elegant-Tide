@@ -58,10 +58,12 @@ export interface ProjectorWindowBounds {
   height: number
 }
 
+export type ProjectionChannel = LangCode | 'comment'
+
 export interface ProjectorWindowConfig {
   id: string              // stable UUID for this window slot
   label: string           // 'Stage Left', 'Balcony', ...
-  language: LangCode
+  language: ProjectionChannel
   style: ProjectionStyle
   bounds?: ProjectorWindowBounds
   opacity: number         // 0..1
@@ -70,6 +72,17 @@ export interface ProjectorWindowConfig {
 }
 
 // ─── Subtitle line ───────────────────────────────────────────────────────────
+
+export type CueKind = 'sound' | 'light'
+export type CueMarkerType = 'point' | 'range-start' | 'range-end'
+
+export interface CueMarker {
+  id: string           // stable UUID for this marker instance
+  kind: CueKind
+  markerType: CueMarkerType
+  name: string         // required for range-start/end; optional label for point
+  rangeId?: string     // links range-start to range-end (same UUID on both)
+}
 
 export interface SubtitleLine {
   id: string              // ULID
@@ -87,6 +100,8 @@ export interface SubtitleLine {
   // Extended fields (from Spectitular import and future features)
   skip?: boolean          // operator marks line to skip during projection
   role?: string           // character / speaker name
+  tags?: ('sound' | 'light')[]  // cue tags for sound/light automation
+  cues?: CueMarker[]            // named cue events on this line
   styleClasses?: string   // CSS class names e.g. 'italic bold'
   spectitularMeta?: Record<string, unknown> // UID, act, scene, show logs, etc.
 }
@@ -94,6 +109,9 @@ export interface SubtitleLine {
 // ─── Project ─────────────────────────────────────────────────────────────────
 
 export type CollaboratorRole = 'author' | 'translator' | 'viewer'
+
+// Runtime session roles (stored in localStorage per project)
+export type ProjectRole = 'master' | 'sound' | 'lighting' | 'viewer'
 
 export interface Collaborator {
   userId: string

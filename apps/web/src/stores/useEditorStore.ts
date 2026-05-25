@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
-import type { SubtitleLine, LineType, Translations, LangCode, MediaPayload } from '@elegant-tide/core-types'
+import type { SubtitleLine, LineType, Translations, LangCode, MediaPayload, CueMarker } from '@elegant-tide/core-types'
 import { linesRepo, midOrder, ORDER_GAP } from '@elegant-tide/db'
 
 interface EditorStore {
@@ -9,6 +9,7 @@ interface EditorStore {
   loading: boolean
 
   loadLines: (projectId: string) => Promise<void>
+  syncLines: (lines: SubtitleLine[]) => void
   selectLine: (id: string, multi?: boolean) => void
   clearSelection: () => void
 
@@ -17,6 +18,8 @@ interface EditorStore {
   insertLineAfter: (refId: string, projectId: string) => Promise<SubtitleLine>
   updateTranslation: (id: string, lang: LangCode, text: string) => Promise<void>
   updateComment: (id: string, comment: string) => Promise<void>
+  updateTags: (id: string, tags: ('sound' | 'light')[]) => Promise<void>
+  updateCues: (id: string, cues: CueMarker[]) => Promise<void>
   updateMedia: (id: string, media: MediaPayload) => Promise<void>
   updateLineType: (id: string, type: LineType) => Promise<void>
   deleteLine: (id: string) => Promise<void>
@@ -49,6 +52,8 @@ export const useEditorStore = create<EditorStore>()(
       const lines = await linesRepo.listByProject(projectId)
       set({ lines, loading: false })
     },
+
+    syncLines: (lines) => set({ lines }),
 
     selectLine: (id, multi = false) => {
       set((s) => {
@@ -115,6 +120,22 @@ export const useEditorStore = create<EditorStore>()(
       const line = get().lines.find((l) => l.id === id)
       if (!line) return
       const updated: SubtitleLine = { ...line, comment, updatedAt: Date.now() }
+      await linesRepo.upsert(updated)
+      set((s) => ({ lines: s.lines.map((l) => (l.id === id ? updated : l)) }))
+    },
+
+    updateTags: async (id, tags) => {
+      const line = get().lines.find((l) => l.id === id)
+      if (!line) return
+      const updated: SubtitleLine = { ...line, tags, updatedAt: Date.now() }
+      await linesRepo.upsert(updated)
+      set((s) => ({ lines: s.lines.map((l) => (l.id === id ? updated : l)) }))
+    },
+
+    updateCues: async (id, cues) => {
+      const line = get().lines.find((l) => l.id === id)
+      if (!line) return
+      const updated: SubtitleLine = { ...line, cues, updatedAt: Date.now() }
       await linesRepo.upsert(updated)
       set((s) => ({ lines: s.lines.map((l) => (l.id === id ? updated : l)) }))
     },

@@ -5,16 +5,19 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db, projectsRepo } from '@elegant-tide/db'
 import { useProjectionStore } from '@/stores/useProjectionStore'
 import { createBus, type Bus } from '@elegant-tide/broadcast-protocol'
-import type { LangCode, ProjectorWindowConfig, ProjectionStyle } from '@elegant-tide/core-types'
+import type { LangCode, ProjectionChannel, ProjectorWindowConfig, ProjectionStyle } from '@elegant-tide/core-types'
 import { DEFAULT_PROJECTION_STYLE } from '@elegant-tide/core-types'
 import { openProjectorWindow as platformOpenProjector, isCapacitor } from '@/lib/platform'
+import { saveCurrentLineId, loadCurrentLineId } from '@/lib/projectionStorage'
+import { useLiveSync } from '@/hooks/useLiveSync'
 import {
   ArrowLeft, ChevronLeft, ChevronRight, EyeOff, ExternalLink,
   Monitor, Pause, Plus, Trash2, Settings,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
-const LANG_LABELS: Record<LangCode, string> = {
+const LANG_LABELS: Record<ProjectionChannel, string> = {
+  comment: 'Comments',
   en: 'EN', es: 'ES', de: 'DE', fr: 'FR', it: 'IT', pt: 'PT',
 }
 
@@ -37,6 +40,9 @@ export function ControlPage() {
 
   const { currentLineId, blackout, freeze, goTo, next, prev, toggleBlackout, toggleFreeze, setLines } =
     useProjectionStore()
+
+  // Broadcast current line to other devices via SSE + BroadcastChannel
+  useLiveSync(projectId, true)
 
   const busRef = useRef<Bus | null>(null)
   const windowId = useRef(`control-${crypto.randomUUID().slice(0, 8)}`)
@@ -67,10 +73,15 @@ export function ControlPage() {
     }
   }, [project])
 
-  // Keep projection store in sync with live lines
+  // Keep projection store in sync with live lines + restore last position
   useEffect(() => {
-    if (lines) setLines(lines)
-  }, [lines, setLines])
+    if (!lines) return
+    setLines(lines)
+    if (!currentLineId) {
+      const saved = loadCurrentLineId(projectId)
+      if (saved && lines.some((l) => l.id === saved)) goTo(saved)
+    }
+  }, [lines, setLines]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Single bus instance for the lifetime of this page
   useEffect(() => {
@@ -91,7 +102,8 @@ export function ControlPage() {
 
   const sendGoto = useCallback((lineId: string) => {
     busRef.current?.send({ kind: 'cue.goto', payload: { lineId } })
-  }, [])
+    saveCurrentLineId(projectId, lineId)
+  }, [projectId])
 
   const handleGoto = useCallback(
     (lineId: string) => { goTo(lineId); sendGoto(lineId) },
@@ -179,8 +191,8 @@ export function ControlPage() {
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-      if (e.code === 'Space' || e.code === 'ArrowRight') { e.preventDefault(); handleNext() }
-      if (e.code === 'ArrowLeft') { e.preventDefault(); handlePrev() }
+      if (e.code === 'Space' || e.code === 'ArrowRight' || e.code === 'ArrowDown') { e.preventDefault(); handleNext() }
+      if (e.code === 'ArrowLeft' || e.code === 'ArrowUp') { e.preventDefault(); handlePrev() }
       if (e.code === 'KeyB') handleBlackout()
     }
     window.addEventListener('keydown', handler)
@@ -436,9 +448,10 @@ export function ControlPage() {
                   <span className="text-xs text-slate-400 block mb-1">Language</span>
                   <select
                     value={editingWindow.language}
-                    onChange={(e) => updateWindowConfig(editingWindow.id, 'language', e.target.value as LangCode)}
+                    onChange={(e) => updateWindowConfig(editingWindow.id, 'language', e.target.value as ProjectionChannel)}
                     className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none"
                   >
+                    <option value="comment" className="bg-slate-900">Comments</option>
                     {(project.languages as LangCode[]).map((lang) => (
                       <option key={lang} value={lang} className="bg-slate-900">
                         {lang.toUpperCase()} — {LANG_LABELS[lang]}
