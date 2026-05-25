@@ -13,10 +13,22 @@ model User {
   displayName    String
   avatarUrl      String?
   passwordHash   String
+  isAnonymous    Boolean        @default(false)
+  deviceId       String?        @unique
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   projects       Project[]
   collaborations Collaborator[]
+  settings       UserSettings?
+}
+
+model UserSettings {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  locale    String   @default("en")
+  theme     String   @default("dark")
+  updatedAt DateTime @updatedAt
 }
 
 model Project {

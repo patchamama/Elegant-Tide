@@ -1,8 +1,12 @@
 import { useState } from 'react'
-import type { LangCode, SubtitleLine } from '@elegant-tide/core-types'
+import type { LangCode, SubtitleLine, ProjectionStyle } from '@elegant-tide/core-types'
+import { DEFAULT_PROJECTION_STYLE } from '@elegant-tide/core-types'
 import { exportSrtMono, exportSrtBilingual, exportPlaintext, exportEtide } from '@elegant-tide/importers'
 import { FileDown, Download, X, Loader2 } from 'lucide-react'
 import { clsx } from 'clsx'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { db } from '@elegant-tide/db'
+import { jsPDF } from 'jspdf'
 
 const LANG_LABELS: Record<LangCode, string> = {
   en: 'English',
@@ -13,7 +17,8 @@ const LANG_LABELS: Record<LangCode, string> = {
   pt: 'Português',
 }
 
-type ExportFormat = 'srt-mono' | 'srt-bilingual' | 'plaintext' | 'etide'
+type ExportFormat = 'srt-mono' | 'srt-bilingual' | 'plaintext' | 'etide' | 'pdf'
+type PdfPageSize = 'a4' | 'letter' | '16:9'
 
 interface ExportDialogProps {
   projectId: string
@@ -43,7 +48,104 @@ function countExportableLines(lines: SubtitleLine[], lang?: LangCode): number {
   }).length
 }
 
+function parseColor(color: string): [number, number, number] {
+  const hex = color.trim()
+  if (hex.startsWith('#')) {
+    const r = parseInt(hex.slice(1, 3), 16)
+    const g = parseInt(hex.slice(3, 5), 16)
+    const b = parseInt(hex.slice(5, 7), 16)
+    return [isNaN(r) ? 0 : r, isNaN(g) ? 0 : g, isNaN(b) ? 0 : b]
+  }
+  const rgba = hex.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
+  if (rgba) return [parseInt(rgba[1] ?? '0'), parseInt(rgba[2] ?? '0'), parseInt(rgba[3] ?? '0')]
+  return [0, 0, 0]
+}
+
+function pageDimensions(size: PdfPageSize): [number, number] {
+  if (size === 'a4') return [297, 210]
+  if (size === 'letter') return [279.4, 215.9]
+  return [304.8, 171.45] // 16:9 at 12 inches wide
+}
+
+function exportPdf(
+  lines: SubtitleLine[],
+  primaryLanguage: LangCode,
+  projectName: string,
+  style: ProjectionStyle,
+  pageSize: PdfPageSize,
+): void {
+  const [pageW, pageH] = pageDimensions(pageSize)
+
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [pageW, pageH] })
+
+  const [bgR, bgG, bgB] = parseColor(
+    style.backgroundColor === 'transparent' ? '#000000' : style.backgroundColor,
+  )
+  const [fgR, fgG, fgB] = parseColor(style.textColor)
+
+  const exportableLines = lines.filter(l => {
+    if (l.deletedAt || l.skip) return false
+    if (l.type === 'comment' || l.type === 'blackout') return false
+    return !!l.translations[primaryLanguage]?.trim()
+  })
+
+  const total = exportableLines.length
+  const fontSizePt = Math.round(style.fontSizePx / 1.33)
+  const headerFontPt = 7
+  const padding = (style.paddingPx / 1.33) * 0.352778 // px → mm
+
+  exportableLines.forEach((line, idx) => {
+    if (idx > 0) doc.addPage([pageW, pageH], 'landscape')
+
+    doc.setFillColor(bgR, bgG, bgB)
+    doc.rect(0, 0, pageW, pageH, 'F')
+
+    // Header: project name + line number
+    doc.setFontSize(headerFontPt)
+    doc.setTextColor(Math.min(fgR + 60, 255), Math.min(fgG + 60, 255), Math.min(fgB + 60, 255))
+    doc.text(`${projectName}   ${idx + 1} / ${total}`, padding, padding + 2)
+
+    // Main text
+    doc.setFontSize(fontSizePt)
+    doc.setTextColor(fgR, fgG, fgB)
+
+    const text = line.translations[primaryLanguage] ?? ''
+    const maxWidth = pageW - padding * 2
+
+    const jsPdfAlign = style.textAlign === 'left' ? 'left' : style.textAlign === 'right' ? 'right' : 'center'
+    let textX: number
+    if (style.textAlign === 'left') textX = padding
+    else if (style.textAlign === 'right') textX = pageW - padding
+    else textX = pageW / 2
+
+    const lines2d = doc.splitTextToSize(text, maxWidth) as string[]
+    const lineHeightMm = (fontSizePt * 0.352778) * style.lineHeight
+    const blockH = lines2d.length * lineHeightMm
+
+    let textY: number
+    if (style.verticalAlign === 'top') {
+      textY = padding + 8 + lineHeightMm
+    } else if (style.verticalAlign === 'bottom') {
+      textY = pageH - padding - blockH + lineHeightMm
+    } else {
+      textY = (pageH - blockH) / 2 + lineHeightMm
+    }
+
+    doc.text(lines2d, textX, textY, { align: jsPdfAlign, lineHeightFactor: style.lineHeight })
+
+    // Footer: line type indicator for media lines
+    if (line.type === 'media') {
+      doc.setFontSize(headerFontPt)
+      doc.setTextColor(Math.min(fgR + 60, 255), Math.min(fgG + 60, 255), Math.min(fgB + 60, 255))
+      doc.text('[MEDIA]', pageW - padding, pageH - padding * 0.5, { align: 'right' })
+    }
+  })
+
+  doc.save(`${projectName}_projection.pdf`)
+}
+
 export function ExportDialog({
+  projectId,
   projectName,
   languages,
   primaryLanguage,
@@ -55,19 +157,30 @@ export function ExportDialog({
   const [secondaryLang, setSecondaryLang] = useState<LangCode>(
     languages.find(l => l !== primaryLanguage) ?? primaryLanguage,
   )
+  const [pdfPageSize, setPdfPageSize] = useState<PdfPageSize>('a4')
   const [exporting, setExporting] = useState(false)
+
+  const project = useLiveQuery(() => db.projects.get(projectId), [projectId])
+
+  const projectionStyle: ProjectionStyle =
+    project?.projectorWindows?.[0]?.style ?? project?.defaultStyle ?? DEFAULT_PROJECTION_STYLE
 
   const lineCount = format === 'etide'
     ? lines.filter(l => !l.deletedAt).length
-    : format === 'srt-bilingual'
-      ? countExportableLines(lines, lang)
+    : format === 'pdf'
+      ? lines.filter(l => !l.deletedAt && !l.skip && l.type !== 'comment' && l.type !== 'blackout' && !!l.translations[primaryLanguage]?.trim()).length
       : countExportableLines(lines, lang)
 
   const handleExport = () => {
     setExporting(true)
-    // yield one frame so the spinner paints before the synchronous generation runs
     setTimeout(() => {
       try {
+        if (format === 'pdf') {
+          exportPdf(lines, primaryLanguage, projectName, projectionStyle, pdfPageSize)
+          onClose()
+          return
+        }
+
         let content: string
         let filename: string
 
@@ -98,6 +211,7 @@ export function ExportDialog({
     { id: 'srt-bilingual', label: 'SRT bilingual', description: 'Two languages stacked per cue' },
     { id: 'plaintext', label: 'Plain text', description: 'One line per subtitle, no timecodes' },
     { id: 'etide', label: 'Elegant Tide (.etide)', description: 'Full round-trip export — preserves all data' },
+    { id: 'pdf', label: 'PDF (Projector style)', description: 'One page per subtitle line, styled for projection' },
   ]
 
   const secondaryLangOptions = languages.filter(l => l !== lang)
@@ -194,6 +308,29 @@ export function ExportDialog({
                   : <option value={lang}>{LANG_LABELS[lang]} (only one language)</option>
                 }
               </select>
+            </div>
+          )}
+
+          {/* PDF page size picker */}
+          {format === 'pdf' && (
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-slate-400 flex-shrink-0">Page size:</label>
+              <div className="flex gap-1">
+                {(['a4', 'letter', '16:9'] as PdfPageSize[]).map(size => (
+                  <button
+                    key={size}
+                    onClick={() => setPdfPageSize(size)}
+                    className={clsx(
+                      'px-3 py-1.5 rounded-lg text-xs transition-colors',
+                      pdfPageSize === size
+                        ? 'bg-brand-600 text-white'
+                        : 'bg-slate-800 text-slate-400 hover:bg-slate-700',
+                    )}
+                  >
+                    {size === '16:9' ? '16:9 (Presentation)' : size.toUpperCase()}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 

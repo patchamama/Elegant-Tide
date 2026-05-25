@@ -115,6 +115,40 @@ export async function authRoutes(app: FastifyInstance) {
   app.get('/auth/me', { preHandler: [app.authenticate] }, async (req, reply) => {
     const user = await prisma.user.findUnique({ where: { id: req.userId } })
     if (!user) return reply.code(404).send({ error: 'User not found' })
-    return { id: user.id, email: user.email, displayName: user.displayName, avatarUrl: user.avatarUrl }
+    return { id: user.id, email: user.email, displayName: user.displayName, avatarUrl: user.avatarUrl, isAnonymous: user.isAnonymous }
+  })
+
+  app.post('/auth/anonymous', async (req, reply) => {
+    const body = z.object({ deviceId: z.string().min(1) }).parse(req.body)
+
+    const existing = await prisma.user.findUnique({ where: { deviceId: body.deviceId } })
+    if (existing) {
+      const { accessToken, refreshToken } = issueTokens(app, existing.id)
+      await storeRefresh(existing.id, refreshToken)
+      return reply
+        .setCookie('access_token', accessToken, { httpOnly: true, sameSite: 'lax', path: '/' })
+        .setCookie('refresh_token', refreshToken, { httpOnly: true, sameSite: 'lax', path: '/auth/refresh' })
+        .send({ user: { id: existing.id, email: existing.email, displayName: existing.displayName, isAnonymous: true } })
+    }
+
+    const uid = crypto.randomUUID()
+    const passwordHash = await argon2.hash(uid)
+    const user = await prisma.user.create({
+      data: {
+        email: `anon_${uid}@local`,
+        displayName: 'Anonymous',
+        passwordHash,
+        isAnonymous: true,
+        deviceId: body.deviceId,
+      },
+    })
+
+    const { accessToken, refreshToken } = issueTokens(app, user.id)
+    await storeRefresh(user.id, refreshToken)
+
+    return reply
+      .setCookie('access_token', accessToken, { httpOnly: true, sameSite: 'lax', path: '/' })
+      .setCookie('refresh_token', refreshToken, { httpOnly: true, sameSite: 'lax', path: '/auth/refresh' })
+      .send({ user: { id: user.id, email: user.email, displayName: user.displayName, isAnonymous: true } })
   })
 }

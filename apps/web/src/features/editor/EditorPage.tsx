@@ -9,9 +9,11 @@ import { useLiveSync } from '@/hooks/useLiveSync'
 import { useProjectionStore } from '@/stores/useProjectionStore'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useEditorStore } from '@/stores/useEditorStore'
+import { useAudioPreloader } from '@/hooks/useAudioPreloader'
 import {
   ArrowLeft,
   Play,
+  Pause,
   Upload,
   Download,
   Plus,
@@ -67,6 +69,7 @@ export function EditorPage() {
     const saved = loadCurrentLineId(projectId)
     if (saved && !currentLineId) goTo(saved)
   }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const [showImport, setShowImport] = useState(false)
   const [showExport, setShowExport] = useState(false)
   const [showLangPicker, setShowLangPicker] = useState(false)
@@ -105,6 +108,23 @@ export function EditorPage() {
   useEffect(() => {
     if (lines) syncLines(lines)
   }, [lines]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const audioMapRef = useAudioPreloader(lines ?? [], currentLineId, projectId)
+  const [audioPlaying, setAudioPlaying] = useState(false)
+  const [audioProgress, setAudioProgress] = useState<{ current: number; duration: number }>({ current: 0, duration: 0 })
+
+  useEffect(() => {
+    const audio = currentLineId ? audioMapRef.current.get(currentLineId) : undefined
+    if (!audio) { setAudioPlaying(false); setAudioProgress({ current: 0, duration: 0 }); return }
+    const onTimeUpdate = () => setAudioProgress({ current: audio.currentTime, duration: audio.duration || 0 })
+    const onEnded = () => setAudioPlaying(false)
+    audio.addEventListener('timeupdate', onTimeUpdate)
+    audio.addEventListener('ended', onEnded)
+    return () => {
+      audio.removeEventListener('timeupdate', onTimeUpdate)
+      audio.removeEventListener('ended', onEnded)
+    }
+  }, [currentLineId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAddLine = async () => {
     await addLine(projectId)
@@ -498,7 +518,29 @@ export function EditorPage() {
           </>
         )}
 
-        <div className="flex-1" />
+        <div className="flex-1 flex items-center">
+          {currentLineId && audioMapRef.current.has(currentLineId) && (() => {
+            const audio = audioMapRef.current.get(currentLineId)!
+            const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+            return (
+              <div className="flex items-center gap-2 px-2 py-0.5 rounded-lg bg-slate-800/60 border border-slate-700/50">
+                <Volume2 size={11} className="text-sky-400 flex-shrink-0" />
+                <button
+                  onClick={() => {
+                    if (audio.paused) { void audio.play(); setAudioPlaying(true) }
+                    else { audio.pause(); setAudioPlaying(false) }
+                  }}
+                  className="text-sky-300 hover:text-white transition-colors"
+                >
+                  {audioPlaying ? <Pause size={13} /> : <Play size={13} />}
+                </button>
+                <span className="text-xs text-slate-500 tabular-nums">
+                  {fmt(audioProgress.current)} / {fmt(audioProgress.duration)}
+                </span>
+              </div>
+            )
+          })()}
+        </div>
 
         {selectedIds.size > 0 && (
           <span className="text-brand-400 tabular-nums">{selectedIds.size} selected</span>

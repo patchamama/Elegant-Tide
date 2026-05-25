@@ -106,6 +106,7 @@ export interface SubtitleLine {
   cues?: CueMarker[]            // named cue events on this line
   styleClasses?: string   // CSS class names e.g. 'italic bold'
   spectitularMeta?: Record<string, unknown> // UID, act, scene, show logs, etc.
+  audioRef?: string       // asset ID (Dexie audioAssets) or direct URL
 }
 
 // ─── Project ─────────────────────────────────────────────────────────────────

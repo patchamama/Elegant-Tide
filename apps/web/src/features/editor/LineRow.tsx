@@ -4,6 +4,8 @@ import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { SubtitleLine, LangCode, LineType, MediaSourceType, CueMarker, CueKind } from '@elegant-tide/core-types'
 import { useEditorStore } from '@/stores/useEditorStore'
+import { db } from '@elegant-tide/db'
+import type { AudioAsset } from '@elegant-tide/db'
 import {
   MessageSquare,
   Film,
@@ -28,6 +30,7 @@ import {
   PlayCircle,
   StopCircle,
   Zap,
+  Paperclip,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -576,7 +579,7 @@ const CUE_COLORS: Record<CueKind, { bg: string; text: string; border: string; ac
 }
 
 function CommentCell({ line, canEdit = true, openRanges = [] }: { line: SubtitleLine; canEdit?: boolean; openRanges?: OpenRange[] }) {
-  const { updateComment, updateTags, updateCues } = useEditorStore()
+  const { updateComment, updateTags, updateCues, updateAudioRef } = useEditorStore()
   const tags = line.tags ?? []
   const cues = line.cues ?? []
   const remoteComment = line.comment ?? ''
@@ -591,6 +594,62 @@ function CommentCell({ line, canEdit = true, openRanges = [] }: { line: Subtitle
   const hasSoundTag = tags.includes('sound')
   const hasLightTag = tags.includes('light')
   const hasAudioKeyword = AUDIO_KEYWORDS.test(localComment)
+
+  const [showAudioPanel, setShowAudioPanel] = useState(false)
+  const [audioUrlInput, setAudioUrlInput] = useState('')
+  const [audioAssetName, setAudioAssetName] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Resolve display name for existing audioRef
+  useEffect(() => {
+    if (!line.audioRef) { setAudioAssetName(null); return }
+    if (line.audioRef.startsWith('http') || line.audioRef.startsWith('blob:')) {
+      setAudioAssetName(line.audioRef)
+      return
+    }
+    void db.audioAssets.get(line.audioRef).then((a) => setAudioAssetName(a?.name ?? null))
+  }, [line.audioRef])
+
+  const handleFileUpload = async (file: File) => {
+    const asset: AudioAsset = {
+      id: crypto.randomUUID(),
+      projectId: line.projectId,
+      name: file.name,
+      mimeType: file.type,
+      size: file.size,
+      blob: file,
+      createdAt: Date.now(),
+    }
+    await db.audioAssets.add(asset)
+    await updateAudioRef(line.id, asset.id)
+    setShowAudioPanel(false)
+  }
+
+  const handleUrlAttach = async () => {
+    const url = audioUrlInput.trim()
+    if (!url) return
+    const asset: AudioAsset = {
+      id: crypto.randomUUID(),
+      projectId: line.projectId,
+      name: url,
+      mimeType: 'audio/unknown',
+      size: 0,
+      url,
+      createdAt: Date.now(),
+    }
+    await db.audioAssets.add(asset)
+    await updateAudioRef(line.id, url)
+    setAudioUrlInput('')
+    setShowAudioPanel(false)
+  }
+
+  const handleRemoveAudio = async () => {
+    const ref = line.audioRef
+    if (ref && !ref.startsWith('http') && !ref.startsWith('blob:')) {
+      await db.audioAssets.delete(ref)
+    }
+    await updateAudioRef(line.id, undefined)
+  }
 
   // Auto-tag: run once on mount AND whenever remoteComment changes (covers DB-loaded lines)
   useEffect(() => {
@@ -753,6 +812,86 @@ function CommentCell({ line, canEdit = true, openRanges = [] }: { line: Subtitle
           </div>
         )}
       </div>
+
+      {/* Audio attachment — shown when line has sound tag */}
+      {hasSoundTag && (
+        <div className="flex items-center gap-1 flex-wrap">
+          {line.audioRef ? (
+            <>
+              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-sky-950/40 border border-sky-700/40 text-sky-300 max-w-48 truncate" title={audioAssetName ?? line.audioRef}>
+                <Paperclip size={9} />
+                <span className="truncate">{audioAssetName ?? '…'}</span>
+              </span>
+              {canEdit && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); void handleRemoveAudio() }}
+                  className="p-0.5 text-slate-600 hover:text-red-400 transition-colors"
+                  title="Remove audio"
+                >
+                  <X size={9} />
+                </button>
+              )}
+            </>
+          ) : canEdit ? (
+            <div className="relative">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowAudioPanel((v) => !v) }}
+                className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs text-slate-600 hover:text-sky-400 border border-transparent hover:border-sky-700/40 transition-colors"
+                title="Attach audio"
+              >
+                <Paperclip size={10} />
+                Attach audio
+              </button>
+              {showAudioPanel && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setShowAudioPanel(false) }} />
+                  <div
+                    className="absolute left-0 top-7 z-50 w-64 rounded-xl border border-slate-600 shadow-2xl p-3 flex flex-col gap-2"
+                    style={{ backgroundColor: 'rgb(15 23 42)' }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <p className="text-xs text-slate-400 font-medium">Attach audio file</p>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="audio/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) void handleFileUpload(file)
+                      }}
+                    />
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-sky-950/40 border border-sky-700/40 text-sky-300 hover:bg-sky-900/40 text-xs transition-colors"
+                    >
+                      <Paperclip size={11} />
+                      Upload file…
+                    </button>
+                    <div className="flex gap-1">
+                      <input
+                        type="url"
+                        value={audioUrlInput}
+                        onChange={(e) => setAudioUrlInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') void handleUrlAttach() }}
+                        placeholder="Or paste URL…"
+                        className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 outline-none focus:border-slate-400 min-w-0"
+                      />
+                      <button
+                        onClick={() => void handleUrlAttach()}
+                        disabled={!audioUrlInput.trim()}
+                        className="px-2 py-1 rounded bg-sky-700 hover:bg-sky-600 text-white text-xs disabled:opacity-40 transition-colors"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : null}
+        </div>
+      )}
 
       {/* Inline range-close suggestion — if open range and no action yet */}
       {openRanges.length > 0 && canEdit && cues.filter((c) => c.markerType === 'range-end').length === 0 && (

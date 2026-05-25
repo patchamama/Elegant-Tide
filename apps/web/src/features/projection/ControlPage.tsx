@@ -11,10 +11,11 @@ import { DEFAULT_PROJECTION_STYLE } from '@elegant-tide/core-types'
 import { openProjectorWindow as platformOpenProjector, isCapacitor } from '@/lib/platform'
 import { saveCurrentLineId, loadCurrentLineId } from '@/lib/projectionStorage'
 import { useLiveSync } from '@/hooks/useLiveSync'
+import { useAudioPreloader } from '@/hooks/useAudioPreloader'
 import { LineList } from '@/features/editor/LineList'
 import {
   ArrowLeft, ChevronLeft, ChevronRight, EyeOff, ExternalLink,
-  Monitor, Pause, Plus, Trash2, Settings,
+  Monitor, Pause, Plus, Trash2, Settings, Play, Volume2,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -53,6 +54,8 @@ export function ControlPage() {
   const [activePanel, setActivePanel] = useState<'lines' | 'windows'>('lines')
   const [windowConfigs, setWindowConfigs] = useState<ProjectorWindowConfig[]>([])
   const [editingWindowId, setEditingWindowId] = useState<string | null>(null)
+  const [audioPlaying, setAudioPlaying] = useState(false)
+  const [audioProgress, setAudioProgress] = useState<{ current: number; duration: number }>({ current: 0, duration: 0 })
 
   // Live queries
   const project = useLiveQuery(() => db.projects.get(projectId), [projectId])
@@ -65,6 +68,33 @@ export function ControlPage() {
         .sortBy('order'),
     [projectId],
   )
+
+  const audioMapRef = useAudioPreloader(lines ?? [], currentLineId, projectId)
+
+  // Auto-play audio when currentLineId changes to a line with audioRef
+  useEffect(() => {
+    const audio = currentLineId ? audioMapRef.current.get(currentLineId) : undefined
+    if (!audio) { setAudioPlaying(false); setAudioProgress({ current: 0, duration: 0 }); return }
+
+    const currentLine = (lines ?? []).find((l) => l.id === currentLineId)
+    const shouldAutoplay = currentLine?.audioRef != null &&
+      (currentLine.media?.autoplay === true || !currentLine.media)
+
+    const onTimeUpdate = () => setAudioProgress({ current: audio.currentTime, duration: audio.duration || 0 })
+    const onEnded = () => setAudioPlaying(false)
+    audio.addEventListener('timeupdate', onTimeUpdate)
+    audio.addEventListener('ended', onEnded)
+
+    if (shouldAutoplay) {
+      audio.currentTime = 0
+      void audio.play().then(() => setAudioPlaying(true)).catch(() => {})
+    }
+
+    return () => {
+      audio.removeEventListener('timeupdate', onTimeUpdate)
+      audio.removeEventListener('ended', onEnded)
+    }
+  }, [currentLineId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Seed window configs from project or init with primary lang
   useEffect(() => {
@@ -328,6 +358,28 @@ export function ControlPage() {
                   <p className="text-slate-600 text-sm italic">Select a line to preview</p>
                 )}
               </div>
+
+              {currentLineId && audioMapRef.current.has(currentLineId) && (() => {
+                const audio = audioMapRef.current.get(currentLineId)!
+                const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+                return (
+                  <div className="px-4 pb-2 flex items-center gap-2 bg-sky-950/20 border-t border-sky-900/30 py-2">
+                    <Volume2 size={13} className="text-sky-400 flex-shrink-0" />
+                    <button
+                      onClick={() => {
+                        if (audio.paused) { void audio.play(); setAudioPlaying(true) }
+                        else { audio.pause(); setAudioPlaying(false) }
+                      }}
+                      className="text-sky-300 hover:text-white transition-colors flex-shrink-0"
+                    >
+                      {audioPlaying ? <Pause size={15} /> : <Play size={15} />}
+                    </button>
+                    <span className="text-xs text-slate-400 tabular-nums">
+                      {fmt(audioProgress.current)} / {fmt(audioProgress.duration)}
+                    </span>
+                  </div>
+                )
+              })()}
 
               {visibleLines.length > 0 && (
                 <div className="px-4 pb-2">

@@ -21,6 +21,7 @@ interface EditorStore {
   updateTags: (id: string, tags: ('sound' | 'light')[]) => Promise<void>
   updateCues: (id: string, cues: CueMarker[]) => Promise<void>
   updateMedia: (id: string, media: MediaPayload) => Promise<void>
+  updateAudioRef: (id: string, audioRef: string | undefined) => Promise<void>
   updateLineType: (id: string, type: LineType) => Promise<void>
   deleteLine: (id: string) => Promise<void>
   splitLine: (id: string, lang: LangCode, splitIndex: number) => Promise<void>
@@ -144,6 +145,17 @@ export const useEditorStore = create<EditorStore>()(
       const line = get().lines.find((l) => l.id === id)
       if (!line) return
       const updated: SubtitleLine = { ...line, media, updatedAt: Date.now() }
+      await linesRepo.upsert(updated)
+      set((s) => ({ lines: s.lines.map((l) => (l.id === id ? updated : l)) }))
+    },
+
+    updateAudioRef: async (id, audioRef) => {
+      const line = get().lines.find((l) => l.id === id)
+      if (!line) return
+      const { audioRef: _removed, ...rest } = line
+      const updated: SubtitleLine = audioRef !== undefined
+        ? { ...rest, audioRef, updatedAt: Date.now() }
+        : { ...rest, updatedAt: Date.now() }
       await linesRepo.upsert(updated)
       set((s) => ({ lines: s.lines.map((l) => (l.id === id ? updated : l)) }))
     },

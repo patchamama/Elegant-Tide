@@ -8,6 +8,17 @@ import type {
   SyncConflict,
 } from '@elegant-tide/core-types'
 
+export interface AudioAsset {
+  id: string
+  projectId: string
+  name: string
+  mimeType: string
+  size: number
+  blob?: Blob
+  url?: string
+  createdAt: number
+}
+
 export class ElegantTideDB extends Dexie {
   projects!: EntityTable<SubtitleProject, 'id'>
   lines!: EntityTable<SubtitleLine, 'id'>
@@ -15,6 +26,7 @@ export class ElegantTideDB extends Dexie {
   connectivity!: EntityTable<ConnectivityRecord, 'id'>
   appConfig!: EntityTable<AppConfig, 'id'>
   conflicts!: EntityTable<SyncConflict, 'id'>
+  audioAssets!: EntityTable<AudioAsset, 'id'>
 
   constructor() {
     super('elegant-tide')
@@ -34,6 +46,16 @@ export class ElegantTideDB extends Dexie {
       connectivity: 'id',
       appConfig: 'id',
       conflicts: 'id, projectId, detectedAt',
+    })
+
+    this.version(3).stores({
+      projects: 'id, updatedAt, deletedAt, ownerId',
+      lines: 'id, projectId, order, updatedAt, deletedAt, [projectId+order]',
+      outbox: 'id, enqueuedAt',
+      connectivity: 'id',
+      appConfig: 'id',
+      conflicts: 'id, projectId, detectedAt',
+      audioAssets: '++id, projectId',
     })
   }
 }

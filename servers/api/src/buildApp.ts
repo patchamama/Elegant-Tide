@@ -8,6 +8,7 @@ import { authRoutes } from './routes/auth.js'
 import { projectRoutes } from './routes/projects.js'
 import { syncRoutes } from './routes/sync.js'
 import { translateRoutes } from './routes/translate.js'
+import { usersRoutes } from './routes/users.js'
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -47,6 +48,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(projectRoutes)
   await app.register(syncRoutes)
   await app.register(translateRoutes)
+  await app.register(usersRoutes)
 
   app.get('/health', async () => ({ ok: true, env: env.NODE_ENV }))
 

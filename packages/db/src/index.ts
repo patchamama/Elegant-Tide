@@ -1,4 +1,5 @@
 export { db, ElegantTideDB } from './schema.ts'
+export type { AudioAsset } from './schema.ts'
 export { projectsRepo } from './repo/projects.ts'
 export { linesRepo } from './repo/lines.ts'
 export { connectivityRepo } from './repo/connectivity.ts'
