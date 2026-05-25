@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react'
+import { useEffect, useRef, useCallback, useState, useMemo } from 'react'
 import { useParams, useNavigate, Link } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
@@ -16,6 +16,7 @@ import { LineList } from '@/features/editor/LineList'
 import {
   ArrowLeft, ChevronLeft, ChevronRight, EyeOff, ExternalLink,
   Monitor, Pause, Plus, Trash2, Settings, Play, Volume2,
+  Search, ChevronUp, ChevronDown, X as XIcon, Lightbulb, Radio,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -36,6 +37,12 @@ function makeWindowConfig(language: LangCode, idx: number): ProjectorWindowConfi
   }
 }
 
+function normalize(s: string) {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+}
+
+const AUDIO_KW = /klingeln|musik|echo/i
+
 export function ControlPage() {
   const { t } = useTranslation()
   const { projectId } = useParams({ from: '/control/$projectId' })
@@ -45,19 +52,20 @@ export function ControlPage() {
     useProjectionStore()
   const syncLines = useEditorStore((s) => s.syncLines)
 
-  // Broadcast current line to other devices via SSE + BroadcastChannel
   useLiveSync(projectId, true)
 
   const busRef = useRef<Bus | null>(null)
   const windowId = useRef(`control-${crypto.randomUUID().slice(0, 8)}`)
 
-  const [activePanel, setActivePanel] = useState<'lines' | 'windows'>('lines')
+  const [rightPanel, setRightPanel] = useState<'preview' | 'windows'>('preview')
   const [windowConfigs, setWindowConfigs] = useState<ProjectorWindowConfig[]>([])
   const [editingWindowId, setEditingWindowId] = useState<string | null>(null)
   const [audioPlaying, setAudioPlaying] = useState(false)
   const [audioProgress, setAudioProgress] = useState<{ current: number; duration: number }>({ current: 0, duration: 0 })
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchMatchIndex, setSearchMatchIndex] = useState(0)
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
-  // Live queries
   const project = useLiveQuery(() => db.projects.get(projectId), [projectId])
   const lines = useLiveQuery(
     () =>
@@ -71,7 +79,6 @@ export function ControlPage() {
 
   const audioMapRef = useAudioPreloader(lines ?? [], currentLineId, projectId)
 
-  // Auto-play audio when currentLineId changes to a line with audioRef
   useEffect(() => {
     const audio = currentLineId ? audioMapRef.current.get(currentLineId) : undefined
     if (!audio) { setAudioPlaying(false); setAudioProgress({ current: 0, duration: 0 }); return }
@@ -96,7 +103,6 @@ export function ControlPage() {
     }
   }, [currentLineId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Seed window configs from project or init with primary lang
   useEffect(() => {
     if (!project) return
     if (project.projectorWindows?.length) {
@@ -106,7 +112,6 @@ export function ControlPage() {
     }
   }, [project])
 
-  // Keep projection store + editor store in sync with live lines
   useEffect(() => {
     if (!lines) return
     setLines(lines)
@@ -117,7 +122,6 @@ export function ControlPage() {
     }
   }, [lines, setLines, syncLines]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Single bus instance for the lifetime of this page
   useEffect(() => {
     const bus = createBus({ projectId, windowId: windowId.current, role: 'control' })
     busRef.current = bus
@@ -172,9 +176,7 @@ export function ControlPage() {
 
   const openProjectorWindow = useCallback((cfg: ProjectorWindowConfig) => {
     platformOpenProjector(projectId)
-    // Mark open
     setWindowConfigs((prev) => prev.map((w) => w.id === cfg.id ? { ...w, isOpen: true } : w))
-    // Send config after a tiny delay (window needs to mount and listen first)
     setTimeout(() => {
       busRef.current?.send({ kind: 'projector.config', payload: { config: cfg } })
     }, 800)
@@ -186,7 +188,6 @@ export function ControlPage() {
     setWindowConfigs((prev) => {
       const next = prev.map((w) => w.id === id ? { ...w, [key]: value } : w)
       void persistWindowConfigs(next)
-      // Broadcast config update to any open projector
       const updated = next.find((w) => w.id === id)
       if (updated) {
         busRef.current?.send({ kind: 'projector.config', payload: { config: updated } })
@@ -220,7 +221,6 @@ export function ControlPage() {
     if (editingWindowId === id) setEditingWindowId(null)
   }, [windowConfigs, persistWindowConfigs, editingWindowId])
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName
@@ -232,6 +232,44 @@ export function ControlPage() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [handleNext, handlePrev, handleBlackout])
+
+  const visibleLines = useMemo(() => (lines ?? []).filter((l) => l.type !== 'comment'), [lines])
+  const currentIdx = visibleLines.findIndex((l) => l.id === currentLineId)
+
+  // Search
+  const searchMatches = useMemo(() => {
+    const q = normalize(searchQuery.trim())
+    if (!q || !lines) return []
+    return lines
+      .map((line) => {
+        const texts = [...Object.values(line.translations), line.comment ?? '']
+        return texts.some((t) => normalize(t).includes(q)) ? { lineId: line.id } : null
+      })
+      .filter(Boolean) as { lineId: string }[]
+  }, [searchQuery, lines])
+
+  const activeMatch = searchMatches[searchMatchIndex] ?? null
+
+  const navigateSearch = useCallback((dir: 1 | -1) => {
+    if (searchMatches.length === 0) return
+    setSearchMatchIndex((i) => (i + dir + searchMatches.length) % searchMatches.length)
+  }, [searchMatches.length])
+
+  // Footer cue counters
+  const { linesToNextSound, linesToNextLight } = useMemo(() => {
+    if (!lines || !currentLineId) return { linesToNextSound: null, linesToNextLight: null }
+    const idx = lines.findIndex((l) => l.id === currentLineId)
+    if (idx === -1) return { linesToNextSound: null, linesToNextLight: null }
+    const after = lines.slice(idx + 1)
+    const isSoundLine = (l: typeof lines[0]) => l.tags?.includes('sound') || (l.comment ? AUDIO_KW.test(l.comment) : false)
+    const isLightLine = (l: typeof lines[0]) => l.tags?.includes('light')
+    const nextSound = after.findIndex(isSoundLine)
+    const nextLight = after.findIndex(isLightLine)
+    return {
+      linesToNextSound: nextSound === -1 ? null : nextSound + 1,
+      linesToNextLight: nextLight === -1 ? null : nextLight + 1,
+    }
+  }, [lines, currentLineId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (project === undefined || lines === undefined) {
     return (
@@ -249,14 +287,26 @@ export function ControlPage() {
     )
   }
 
-  const visibleLines = (lines ?? []).filter((l) => l.type !== 'comment')
-  const currentIdx = visibleLines.findIndex((l) => l.id === currentLineId)
   const primaryLang = (project.primaryLanguage ?? project.languages[0] ?? 'en') as LangCode
   const editingWindow = windowConfigs.find((w) => w.id === editingWindowId)
 
+  // Mini projector preview — replicate ProjectorPage visual
+  const previewStyle = windowConfigs[0]?.style ?? DEFAULT_PROJECTION_STYLE
+  const previewChannel: ProjectionChannel = windowConfigs[0]?.language ?? primaryLang
+  const currentLine = (lines ?? []).find((l) => l.id === currentLineId)
+  const previewText = !blackout && currentLine?.type !== 'media'
+    ? previewChannel === 'comment'
+      ? (currentLine?.comment ?? '')
+      : (currentLine?.translations[previewChannel as LangCode] ?? '')
+    : ''
+
+  const subtitleCount = lines?.filter(l => l.type === 'subtitle').length ?? 0
+  const blackoutCount = lines?.filter(l => l.type === 'blackout').length ?? 0
+  const commentCount = lines?.filter(l => l.type === 'comment').length ?? 0
+
   return (
     <div className="h-screen bg-slate-950 text-slate-100 flex flex-col overflow-hidden">
-      {/* Toolbar */}
+      {/* Header — same structure as EditorPage */}
       <header className="bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex items-center gap-3 flex-shrink-0">
         <button
           onClick={() => void navigate({ to: '/editor/$projectId', params: { projectId } })}
@@ -264,32 +314,43 @@ export function ControlPage() {
         >
           <ArrowLeft size={17} />
         </button>
-        <h1 className="font-semibold text-sm text-white flex-1 truncate">
-          {project.name} — {t('control.title')}
+        <h1 className="font-semibold text-sm text-white truncate max-w-xs">
+          {project.name}
         </h1>
 
-        {/* Panel toggle */}
-        <div className="flex bg-slate-800 rounded-lg p-0.5 gap-0.5">
-          <button
-            onClick={() => setActivePanel('lines')}
-            className={clsx(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
-              activePanel === 'lines' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white',
-            )}
-          >
-            <ChevronRight size={13} />
-            Script
-          </button>
-          <button
-            onClick={() => setActivePanel('windows')}
-            className={clsx(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
-              activePanel === 'windows' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white',
-            )}
-          >
-            <Monitor size={13} />
-            Windows
-          </button>
+        <div className="flex-1" />
+
+        {/* Search bar */}
+        <div className="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1">
+          <Search size={12} className="text-slate-500 flex-shrink-0" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => { setSearchQuery(e.target.value); setSearchMatchIndex(0) }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') navigateSearch(e.shiftKey ? -1 : 1)
+              if (e.key === 'Escape') { setSearchQuery(''); searchInputRef.current?.blur() }
+            }}
+            placeholder="Search…"
+            className="bg-transparent text-xs text-slate-200 outline-none placeholder-slate-600 w-36"
+          />
+          {searchQuery && (
+            <>
+              <span className="text-xs text-slate-500 tabular-nums min-w-8 text-center">
+                {searchMatches.length > 0 ? `${searchMatchIndex + 1}/${searchMatches.length}` : '0/0'}
+              </span>
+              <button onClick={() => navigateSearch(-1)} className="p-0.5 text-slate-400 hover:text-white transition-colors">
+                <ChevronUp size={13} />
+              </button>
+              <button onClick={() => navigateSearch(1)} className="p-0.5 text-slate-400 hover:text-white transition-colors">
+                <ChevronDown size={13} />
+              </button>
+              <button onClick={() => { setSearchQuery(''); setSearchMatchIndex(0) }} className="p-0.5 text-slate-500 hover:text-white transition-colors">
+                <XIcon size={11} />
+              </button>
+            </>
+          )}
         </div>
 
         <button
@@ -313,57 +374,103 @@ export function ControlPage() {
           <EyeOff size={13} />
           {t('control.blackout')}
         </button>
+
+        {/* Right panel toggle */}
+        <div className="flex bg-slate-800 rounded-lg p-0.5 gap-0.5">
+          <button
+            onClick={() => setRightPanel('preview')}
+            className={clsx(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
+              rightPanel === 'preview' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white',
+            )}
+          >
+            <Radio size={13} />
+            Preview
+          </button>
+          <button
+            onClick={() => setRightPanel('windows')}
+            className={clsx(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
+              rightPanel === 'windows' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white',
+            )}
+          >
+            <Monitor size={13} />
+            Windows
+          </button>
+        </div>
       </header>
 
-      {/* Main */}
+      {/* Main — always: [line list | right panel] */}
       <div className="flex-1 flex overflow-hidden">
 
-        {/* ── SCRIPT PANEL ─────────────────────────────────────────── */}
-        {activePanel === 'lines' && (
-          <>
-            {/* Line list — same visual as editor, read-only, click to go-to */}
-            <div className="flex-1 overflow-hidden flex flex-col" onClick={(e) => {
-              // Intercept line-row clicks to trigger goto instead of edit
-              const row = (e.target as HTMLElement).closest('[data-testid="line-row"]') as HTMLElement | null
-              if (row) {
-                const lineId = row.getAttribute('data-line-id')
-                if (lineId) handleGoto(lineId)
-              }
-            }}>
-              <LineList
-                lines={lines ?? []}
-                languages={project.languages as LangCode[]}
-                primaryLang={primaryLang}
-                projectId={projectId}
-                canEditSubtitles={false}
-                canEditComments={false}
-                followLineId={currentLineId}
-                isFollowing={true}
-              />
-            </div>
+        {/* Line list with play-on-hover row numbers */}
+        <div className="flex-1 overflow-hidden flex flex-col" onClick={(e) => {
+          const row = (e.target as HTMLElement).closest('[data-testid="line-row"]') as HTMLElement | null
+          if (row) {
+            const lineId = row.getAttribute('data-line-id')
+            if (lineId) handleGoto(lineId)
+          }
+        }}>
+          <LineList
+            lines={lines ?? []}
+            languages={project.languages as LangCode[]}
+            primaryLang={primaryLang}
+            projectId={projectId}
+            canEditSubtitles={false}
+            canEditComments={false}
+            searchQuery={searchQuery}
+            activeMatchLineId={activeMatch?.lineId ?? null}
+            followLineId={currentLineId}
+            isFollowing={true}
+            onLineActivate={handleGoto}
+          />
+        </div>
 
-            {/* Right panel — preview + controls */}
-            <div className="w-80 bg-slate-900 border-l border-slate-800 flex flex-col flex-shrink-0">
-              <div className="flex-1 flex items-center justify-center p-6 min-h-0">
+        {/* Right panel */}
+        <div className="w-80 bg-slate-900 border-l border-slate-800 flex flex-col flex-shrink-0">
+
+          {rightPanel === 'preview' && (
+            <>
+              {/* Mini projector — black canvas with styled text */}
+              <div
+                className="flex-1 flex items-center justify-center min-h-0 relative overflow-hidden"
+                style={{ background: previewStyle.backgroundColor ?? '#000' }}
+              >
                 {blackout ? (
                   <div className="text-center">
-                    <EyeOff size={24} className="text-red-500 mx-auto mb-2" />
-                    <p className="text-slate-600 text-sm italic">Blackout active</p>
+                    <EyeOff size={20} className="text-red-500 mx-auto mb-2" />
+                    <p className="text-slate-600 text-xs italic">Blackout</p>
                   </div>
-                ) : currentLineId ? (
-                  <p className="text-white text-xl text-center leading-relaxed">
-                    {(lines ?? []).find((l) => l.id === currentLineId)?.translations[primaryLang] ?? ''}
-                  </p>
+                ) : previewText ? (
+                  <div
+                    style={{
+                      fontFamily: previewStyle.fontFamily,
+                      fontSize: `${Math.min(previewStyle.fontSizePx, 32)}px`,
+                      fontWeight: previewStyle.fontWeight,
+                      color: previewStyle.textColor,
+                      textShadow: previewStyle.textShadow,
+                      padding: `${previewStyle.paddingPx}px ${previewStyle.paddingPx * 2}px`,
+                      textAlign: previewStyle.textAlign,
+                      lineHeight: previewStyle.lineHeight,
+                      borderRadius: `${previewStyle.borderRadiusPx ?? 4}px`,
+                      maxWidth: '90%',
+                      whiteSpace: 'pre-wrap',
+                      backgroundColor: 'transparent',
+                    }}
+                  >
+                    {previewText}
+                  </div>
                 ) : (
-                  <p className="text-slate-600 text-sm italic">Select a line to preview</p>
+                  <p className="text-slate-700 text-xs italic">No line active</p>
                 )}
               </div>
 
+              {/* Audio mini player */}
               {currentLineId && audioMapRef.current.has(currentLineId) && (() => {
                 const audio = audioMapRef.current.get(currentLineId)!
                 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
                 return (
-                  <div className="px-4 pb-2 flex items-center gap-2 bg-sky-950/20 border-t border-sky-900/30 py-2">
+                  <div className="px-4 py-2 flex items-center gap-2 bg-sky-950/20 border-t border-sky-900/30">
                     <Volume2 size={13} className="text-sky-400 flex-shrink-0" />
                     <button
                       onClick={() => {
@@ -381,8 +488,9 @@ export function ControlPage() {
                 )
               })()}
 
+              {/* Progress bar */}
               {visibleLines.length > 0 && (
-                <div className="px-4 pb-2">
+                <div className="px-4 py-2 border-t border-slate-800">
                   <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-brand-600 rounded-full transition-all"
@@ -395,6 +503,7 @@ export function ControlPage() {
                 </div>
               )}
 
+              {/* Prev / Next */}
               <div className="border-t border-slate-800 p-4 flex gap-3">
                 <button
                   onClick={handlePrev}
@@ -414,34 +523,31 @@ export function ControlPage() {
                 </button>
               </div>
               <p className="text-center text-xs text-slate-700 pb-3">Space/→ next · ← prev · B blackout</p>
-            </div>
-          </>
-        )}
+            </>
+          )}
 
-        {/* ── WINDOWS PANEL ────────────────────────────────────────── */}
-        {activePanel === 'windows' && (
-          <div className="flex-1 flex overflow-hidden">
-            {/* Window list */}
-            <div className="w-72 border-r border-slate-800 flex flex-col">
-              <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-                <h2 className="text-sm font-medium text-white">Projector Windows</h2>
-                <button
-                  onClick={addWindow}
-                  className="flex items-center gap-1 text-xs text-brand-400 hover:text-brand-300 transition-colors"
-                >
-                  <Plus size={13} />
-                  Add
-                </button>
-              </div>
+          {rightPanel === 'windows' && (
+            <div className="flex flex-col flex-1 overflow-hidden">
+              {/* Window list */}
               <div className="flex-1 overflow-y-auto">
+                <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+                  <h2 className="text-sm font-medium text-white">Projector Windows</h2>
+                  <button
+                    onClick={addWindow}
+                    className="flex items-center gap-1 text-xs text-brand-400 hover:text-brand-300 transition-colors"
+                  >
+                    <Plus size={13} />
+                    Add
+                  </button>
+                </div>
                 {windowConfigs.map((cfg) => (
                   <div
                     key={cfg.id}
                     className={clsx(
                       'flex items-center gap-3 px-4 py-3 border-b border-slate-800/60 cursor-pointer transition-colors',
-                      editingWindowId === cfg.id ? 'bg-slate-800' : 'hover:bg-slate-900',
+                      editingWindowId === cfg.id ? 'bg-slate-800' : 'hover:bg-slate-900/60',
                     )}
-                    onClick={() => setEditingWindowId(cfg.id)}
+                    onClick={() => setEditingWindowId(editingWindowId === cfg.id ? null : cfg.id)}
                   >
                     <Monitor size={16} className="text-slate-500 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
@@ -470,211 +576,181 @@ export function ControlPage() {
                   <p className="text-slate-600 text-sm text-center py-8">No windows. Click + to add.</p>
                 )}
               </div>
-            </div>
 
-            {/* Window config editor */}
-            {editingWindow ? (
-              <div className="flex-1 overflow-y-auto p-6 space-y-5">
-                <div className="flex items-center gap-2 mb-2">
-                  <Settings size={16} className="text-slate-400" />
-                  <h3 className="font-medium text-white">Configure: {editingWindow.label}</h3>
-                </div>
+              {/* Window config editor — shown inline below list */}
+              {editingWindow && (
+                <div className="border-t border-slate-800 overflow-y-auto p-4 space-y-4 max-h-96">
+                  <div className="flex items-center gap-2">
+                    <Settings size={14} className="text-slate-400" />
+                    <h3 className="font-medium text-white text-sm">{editingWindow.label}</h3>
+                  </div>
 
-                {/* Label */}
-                <label className="block">
-                  <span className="text-xs text-slate-400 block mb-1">Label</span>
-                  <input
-                    type="text"
-                    value={editingWindow.label}
-                    onChange={(e) => updateWindowConfig(editingWindow.id, 'label', e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-brand-600"
-                  />
-                </label>
-
-                {/* Language */}
-                <label className="block">
-                  <span className="text-xs text-slate-400 block mb-1">Language</span>
-                  <select
-                    value={editingWindow.language}
-                    onChange={(e) => updateWindowConfig(editingWindow.id, 'language', e.target.value as ProjectionChannel)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none"
-                  >
-                    <option value="comment" className="bg-slate-900">Comments</option>
-                    {(project.languages as LangCode[]).map((lang) => (
-                      <option key={lang} value={lang} className="bg-slate-900">
-                        {lang.toUpperCase()} — {LANG_LABELS[lang]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <hr className="border-slate-800" />
-                <p className="text-xs text-slate-500 uppercase tracking-wider">Typography</p>
-
-                {/* Font size */}
-                <label className="block">
-                  <span className="text-xs text-slate-400 block mb-1">Font size: {editingWindow.style.fontSizePx}px</span>
-                  <input
-                    type="range" min={16} max={120} step={2}
-                    value={editingWindow.style.fontSizePx}
-                    onChange={(e) => updateWindowStyle(editingWindow.id, { fontSizePx: Number(e.target.value) })}
-                    className="w-full accent-brand-500"
-                  />
-                </label>
-
-                {/* Font weight */}
-                <label className="block">
-                  <span className="text-xs text-slate-400 block mb-1">Font weight</span>
-                  <select
-                    value={editingWindow.style.fontWeight}
-                    onChange={(e) => updateWindowStyle(editingWindow.id, { fontWeight: Number(e.target.value) as 400 | 600 | 700 })}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none"
-                  >
-                    <option value={400} className="bg-slate-900">Regular (400)</option>
-                    <option value={600} className="bg-slate-900">Semi-bold (600)</option>
-                    <option value={700} className="bg-slate-900">Bold (700)</option>
-                  </select>
-                </label>
-
-                {/* Line height */}
-                <label className="block">
-                  <span className="text-xs text-slate-400 block mb-1">Line height: {editingWindow.style.lineHeight}</span>
-                  <input
-                    type="range" min={1} max={4} step={0.05}
-                    value={editingWindow.style.lineHeight}
-                    onChange={(e) => updateWindowStyle(editingWindow.id, { lineHeight: Number(e.target.value) })}
-                    className="w-full accent-brand-500"
-                  />
-                </label>
-
-                <hr className="border-slate-800" />
-                <p className="text-xs text-slate-500 uppercase tracking-wider">Colors</p>
-
-                {/* Colors */}
-                <div className="flex gap-4">
-                  <label className="flex-1">
-                    <span className="text-xs text-slate-400 block mb-1">Text color</span>
+                  <label className="block">
+                    <span className="text-xs text-slate-400 block mb-1">Label</span>
                     <input
-                      type="color"
-                      value={editingWindow.style.textColor.startsWith('#') ? editingWindow.style.textColor : '#ffffff'}
-                      onChange={(e) => updateWindowStyle(editingWindow.id, { textColor: e.target.value })}
-                      className="w-full h-9 rounded-lg cursor-pointer border border-slate-700"
+                      type="text"
+                      value={editingWindow.label}
+                      onChange={(e) => updateWindowConfig(editingWindow.id, 'label', e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-brand-600"
                     />
                   </label>
-                  <label className="flex-1">
-                    <span className="text-xs text-slate-400 block mb-1">BG color</span>
-                    <input
-                      type="color"
-                      value={editingWindow.style.backgroundColor.startsWith('#') ? editingWindow.style.backgroundColor : '#000000'}
-                      onChange={(e) => updateWindowStyle(editingWindow.id, { backgroundColor: e.target.value + 'b3' })}
-                      className="w-full h-9 rounded-lg cursor-pointer border border-slate-700"
+
+                  <label className="block">
+                    <span className="text-xs text-slate-400 block mb-1">Language</span>
+                    <select
+                      value={editingWindow.language}
+                      onChange={(e) => updateWindowConfig(editingWindow.id, 'language', e.target.value as ProjectionChannel)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none"
+                    >
+                      <option value="comment" className="bg-slate-900">Comments</option>
+                      {(project.languages as LangCode[]).map((lang) => (
+                        <option key={lang} value={lang} className="bg-slate-900">
+                          {lang.toUpperCase()} — {LANG_LABELS[lang]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block">
+                    <span className="text-xs text-slate-400 block mb-1">Font size: {editingWindow.style.fontSizePx}px</span>
+                    <input type="range" min={16} max={120} step={2}
+                      value={editingWindow.style.fontSizePx}
+                      onChange={(e) => updateWindowStyle(editingWindow.id, { fontSizePx: Number(e.target.value) })}
+                      className="w-full accent-brand-500"
                     />
                   </label>
-                </div>
 
-                <hr className="border-slate-800" />
-                <p className="text-xs text-slate-500 uppercase tracking-wider">Layout</p>
+                  <label className="block">
+                    <span className="text-xs text-slate-400 block mb-1">Line height: {editingWindow.style.lineHeight}</span>
+                    <input type="range" min={1} max={4} step={0.05}
+                      value={editingWindow.style.lineHeight}
+                      onChange={(e) => updateWindowStyle(editingWindow.id, { lineHeight: Number(e.target.value) })}
+                      className="w-full accent-brand-500"
+                    />
+                  </label>
 
-                {/* Text align */}
-                <div>
-                  <span className="text-xs text-slate-400 block mb-1">Horizontal alignment</span>
-                  <div className="flex gap-1">
-                    {(['left', 'center', 'right'] as const).map((a) => (
-                      <button
-                        key={a}
-                        onClick={() => updateWindowStyle(editingWindow.id, { textAlign: a })}
-                        className={clsx(
-                          'flex-1 py-2 rounded-lg text-xs capitalize transition-colors',
-                          editingWindow.style.textAlign === a ? 'bg-brand-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700',
-                        )}
-                      >
-                        {a}
-                      </button>
-                    ))}
+                  <div className="flex gap-3">
+                    <label className="flex-1">
+                      <span className="text-xs text-slate-400 block mb-1">Text</span>
+                      <input type="color"
+                        value={editingWindow.style.textColor.startsWith('#') ? editingWindow.style.textColor : '#ffffff'}
+                        onChange={(e) => updateWindowStyle(editingWindow.id, { textColor: e.target.value })}
+                        className="w-full h-8 rounded-lg cursor-pointer border border-slate-700"
+                      />
+                    </label>
+                    <label className="flex-1">
+                      <span className="text-xs text-slate-400 block mb-1">BG</span>
+                      <input type="color"
+                        value={editingWindow.style.backgroundColor.startsWith('#') ? editingWindow.style.backgroundColor : '#000000'}
+                        onChange={(e) => updateWindowStyle(editingWindow.id, { backgroundColor: e.target.value + 'b3' })}
+                        className="w-full h-8 rounded-lg cursor-pointer border border-slate-700"
+                      />
+                    </label>
                   </div>
-                </div>
 
-                {/* Vertical align */}
-                <div>
-                  <span className="text-xs text-slate-400 block mb-1">Vertical alignment</span>
-                  <div className="flex gap-1">
-                    {(['top', 'center', 'bottom'] as const).map((a) => (
-                      <button
-                        key={a}
-                        onClick={() => updateWindowStyle(editingWindow.id, { verticalAlign: a })}
-                        className={clsx(
-                          'flex-1 py-2 rounded-lg text-xs capitalize transition-colors',
-                          (editingWindow.style.verticalAlign ?? 'center') === a ? 'bg-brand-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700',
-                        )}
-                      >
-                        {a}
-                      </button>
-                    ))}
+                  <div>
+                    <span className="text-xs text-slate-400 block mb-1">Horizontal</span>
+                    <div className="flex gap-1">
+                      {(['left', 'center', 'right'] as const).map((a) => (
+                        <button key={a}
+                          onClick={() => updateWindowStyle(editingWindow.id, { textAlign: a })}
+                          className={clsx('flex-1 py-1.5 rounded-lg text-xs capitalize transition-colors',
+                            editingWindow.style.textAlign === a ? 'bg-brand-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700')}
+                        >{a}</button>
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                {/* Opacity */}
-                <label className="block">
-                  <span className="text-xs text-slate-400 block mb-1">Window opacity: {Math.round(editingWindow.opacity * 100)}%</span>
-                  <input
-                    type="range" min={0.1} max={1} step={0.05}
-                    value={editingWindow.opacity}
-                    onChange={(e) => updateWindowConfig(editingWindow.id, 'opacity', Number(e.target.value))}
-                    className="w-full accent-brand-500"
-                  />
-                </label>
+                  <div>
+                    <span className="text-xs text-slate-400 block mb-1">Vertical</span>
+                    <div className="flex gap-1">
+                      {(['top', 'center', 'bottom'] as const).map((a) => (
+                        <button key={a}
+                          onClick={() => updateWindowStyle(editingWindow.id, { verticalAlign: a })}
+                          className={clsx('flex-1 py-1.5 rounded-lg text-xs capitalize transition-colors',
+                            (editingWindow.style.verticalAlign ?? 'center') === a ? 'bg-brand-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700')}
+                        >{a}</button>
+                      ))}
+                    </div>
+                  </div>
 
-                {/* Show media */}
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editingWindow.showMedia}
-                    onChange={(e) => updateWindowConfig(editingWindow.id, 'showMedia', e.target.checked)}
-                    className="accent-brand-500"
-                  />
-                  <span className="text-sm text-slate-300">Play media cues in this window</span>
-                </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox"
+                      checked={editingWindow.showMedia}
+                      onChange={(e) => updateWindowConfig(editingWindow.id, 'showMedia', e.target.checked)}
+                      className="accent-brand-500"
+                    />
+                    <span className="text-sm text-slate-300">Show media cues</span>
+                  </label>
 
-                {!isCapacitor && (
-                  <div className="pt-2">
+                  {!isCapacitor && (
                     <button
                       onClick={() => openProjectorWindow(editingWindow)}
-                      className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors"
+                      className="flex items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors w-full justify-center"
                     >
                       <ExternalLink size={14} />
                       Open {editingWindow.label}
                     </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="flex-1 flex items-center justify-center">
-                <p className="text-slate-600 text-sm">Select a window to configure it</p>
-              </div>
-            )}
-          </div>
-        )}
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Bottom nav bar for quick controls — always visible */}
-      <footer className="bg-slate-900 border-t border-slate-800 px-4 py-3 flex items-center gap-3 flex-shrink-0">
+      {/* Footer — same structure as EditorPage status bar */}
+      <footer className="bg-slate-900 border-t border-slate-800 px-4 py-1.5 flex items-center gap-3 flex-shrink-0 text-xs text-slate-500 select-none">
         <button
           onClick={handlePrev}
           disabled={currentIdx <= 0}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm"
+          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-slate-300"
         >
-          <ChevronLeft size={16} />
+          <ChevronLeft size={14} />
           {t('control.prev')}
         </button>
         <button
           onClick={handleNext}
           disabled={currentIdx >= visibleLines.length - 1}
-          className="flex items-center gap-2 px-6 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+          className="flex items-center gap-1 px-4 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-white font-medium"
         >
           {t('control.next')}
-          <ChevronRight size={16} />
+          <ChevronRight size={14} />
         </button>
-        <span className="text-slate-600 text-xs ml-auto">Space/→ next · ← prev · B blackout</span>
+
+        <span className="tabular-nums text-slate-400">{lines?.length ?? 0} lines</span>
+        {subtitleCount > 0 && <><span>·</span><span>{subtitleCount} subtitles</span></>}
+        {blackoutCount > 0 && <><span>·</span><span>{blackoutCount} blackouts</span></>}
+        {commentCount > 0 && <><span>·</span><span>{commentCount} comments</span></>}
+
+        {linesToNextSound !== null && (
+          <>
+            <span>·</span>
+            <span className={clsx(
+              'flex items-center gap-1 font-semibold tabular-nums transition-colors',
+              linesToNextSound <= 3 ? 'text-red-400 animate-pulse' :
+              linesToNextSound <= 8 ? 'text-orange-400' : 'text-sky-400',
+            )}>
+              <Volume2 size={11} />
+              <span>{linesToNextSound}</span>
+            </span>
+          </>
+        )}
+        {linesToNextLight !== null && (
+          <>
+            <span>·</span>
+            <span className={clsx(
+              'flex items-center gap-1 font-semibold tabular-nums transition-colors',
+              linesToNextLight <= 3 ? 'text-red-400 animate-pulse' :
+              linesToNextLight <= 8 ? 'text-orange-400' : 'text-yellow-400',
+            )}>
+              <Lightbulb size={11} />
+              <span>{linesToNextLight}</span>
+            </span>
+          </>
+        )}
+
+        <span className="ml-auto text-slate-700">Space/→ next · ← prev · B blackout</span>
       </footer>
     </div>
   )

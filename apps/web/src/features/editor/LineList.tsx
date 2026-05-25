@@ -34,9 +34,10 @@ interface LineListProps {
   canEditComments?: boolean
   followLineId?: string | null
   isFollowing?: boolean
+  onLineActivate?: ((lineId: string) => void) | undefined
 }
 
-export function LineList({ lines, languages, primaryLang, projectId, showNotes = false, searchQuery = '', selectedColumn = null, activeMatchLineId = null, activeMatchIndex = null, bookmarkLineId = null, onBookmark, canEditSubtitles = true, canEditComments = true, followLineId = null, isFollowing = false }: LineListProps) {
+export function LineList({ lines, languages, primaryLang, projectId, showNotes = false, searchQuery = '', selectedColumn = null, activeMatchLineId = null, activeMatchIndex = null, bookmarkLineId = null, onBookmark, canEditSubtitles = true, canEditComments = true, followLineId = null, isFollowing = false, onLineActivate }: LineListProps) {
   const parentRef = useRef<HTMLDivElement>(null)
   const { selectedIds, reorderLine } = useEditorStore()
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -193,6 +194,7 @@ export function LineList({ lines, languages, primaryLang, projectId, showNotes =
                     canEditSubtitles={canEditSubtitles}
                     canEditComments={canEditComments}
                     openRanges={openRangesPerLine[vItem.index] ?? []}
+                    onLineActivate={onLineActivate}
                   />
                 </div>
               )

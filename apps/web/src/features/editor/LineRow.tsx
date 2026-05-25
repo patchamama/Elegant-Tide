@@ -31,6 +31,7 @@ import {
   StopCircle,
   Zap,
   Paperclip,
+  Play,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -62,6 +63,7 @@ interface LineRowProps {
   canEditSubtitles?: boolean
   canEditComments?: boolean
   openRanges?: OpenRange[]
+  onLineActivate?: ((lineId: string) => void) | undefined
 }
 
 const TYPE_ICONS: Record<LineType, React.ElementType> = {
@@ -109,6 +111,7 @@ export function LineRow({
   canEditSubtitles = true,
   canEditComments = true,
   openRanges = [],
+  onLineActivate,
 }: LineRowProps) {
   const {
     selectLine,
@@ -199,20 +202,32 @@ export function LineRow({
         <GripVertical size={14} />
       </div>
 
-      {/* Line number — click to bookmark */}
+      {/* Line number — click to activate (control mode) or bookmark (editor mode) */}
       <button
-        onClick={(e) => { e.stopPropagation(); onBookmark?.(line.id) }}
+        onClick={(e) => {
+          e.stopPropagation()
+          if (onLineActivate) onLineActivate(line.id)
+          else onBookmark?.(line.id)
+        }}
         className={clsx(
           'w-7 pt-2.5 text-xs text-right select-none flex-shrink-0 tabular-nums transition-colors group/num',
           isBookmarked ? 'text-brand-400' : 'text-slate-700 hover:text-slate-400',
         )}
-        title={isBookmarked ? 'Remove bookmark' : 'Bookmark this line'}
+        title={onLineActivate ? 'Set as current line' : (isBookmarked ? 'Remove bookmark' : 'Bookmark this line')}
       >
-        {isBookmarked
-          ? <Bookmark size={12} className="ml-auto fill-brand-400 text-brand-400" />
-          : <span className="group-hover/num:hidden">{index + 1}</span>
-        }
-        {!isBookmarked && <Bookmark size={12} className="ml-auto hidden group-hover/num:block text-slate-600" />}
+        {onLineActivate ? (
+          <>
+            <span className="group-hover/num:hidden">{index + 1}</span>
+            <Play size={12} className="ml-auto hidden group-hover/num:block text-brand-400" />
+          </>
+        ) : isBookmarked ? (
+          <Bookmark size={12} className="ml-auto fill-brand-400 text-brand-400" />
+        ) : (
+          <>
+            <span className="group-hover/num:hidden">{index + 1}</span>
+            <Bookmark size={12} className="ml-auto hidden group-hover/num:block text-slate-600" />
+          </>
+        )}
       </button>
 
       {/* Type icon + picker */}
