@@ -27,7 +27,6 @@ export function ProjectorPage() {
   const [style, setStyle] = useState<ProjectionStyle>(DEFAULT_PROJECTION_STYLE)
   const [showSettings, setShowSettings] = useState(false)
   const [showMedia, setShowMedia] = useState(true)
-  const settingsHideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const busRef = useRef<ReturnType<typeof createBus> | null>(null)
   const allLinesRef = useRef<SubtitleLine[]>([])
 
@@ -119,13 +118,6 @@ export function ProjectorPage() {
     return () => window.removeEventListener('keydown', handler)
   }, [navigateProjector])
 
-  // Auto-hide settings overlay after 3s of no interaction
-  const revealSettings = () => {
-    setShowSettings(true)
-    if (settingsHideTimeout.current) clearTimeout(settingsHideTimeout.current)
-    settingsHideTimeout.current = setTimeout(() => setShowSettings(false), 3000)
-  }
-
   const text = (!blackout && currentLine?.type !== 'media')
     ? language === 'comment'
       ? (currentLine?.comment ?? '')
@@ -137,7 +129,6 @@ export function ProjectorPage() {
     <div
       className="min-h-screen overflow-hidden relative select-none"
       style={{ background: '#000' }}
-      onMouseMove={revealSettings}
     >
       {/* Media player — full screen background */}
       {showMedia && !blackout && media?.url && (
@@ -298,10 +289,10 @@ export function ProjectorPage() {
         </div>
       )}
 
-      {/* Settings trigger — tiny icon top-left when overlay hidden */}
+      {/* Settings trigger */}
       {!showSettings && (
         <button
-          onClick={revealSettings}
+          onClick={() => setShowSettings(true)}
           className="absolute top-4 right-4 p-2 text-white/20 hover:text-white/60 transition-colors z-40"
         >
           <Settings size={14} />
