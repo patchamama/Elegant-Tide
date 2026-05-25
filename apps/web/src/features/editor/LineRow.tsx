@@ -591,6 +591,15 @@ function CommentCell({ line, canEdit = true, openRanges = [] }: { line: Subtitle
   const hasLightTag = tags.includes('light')
   const hasAudioKeyword = AUDIO_KEYWORDS.test(localComment)
 
+  // Auto-tag: run once on mount AND whenever remoteComment changes (covers DB-loaded lines)
+  useEffect(() => {
+    const hasKw = AUDIO_KEYWORDS.test(remoteComment)
+    const currentTags = line.tags ?? []
+    if (hasKw && !currentTags.includes('sound')) {
+      void updateTags(line.id, [...currentTags, 'sound'])
+    }
+  }, [remoteComment]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Cues on this line grouped by kind
   const soundCues = cues.filter((c) => c.kind === 'sound')
   const lightCues = cues.filter((c) => c.kind === 'light')
@@ -782,7 +791,18 @@ function CommentCell({ line, canEdit = true, openRanges = [] }: { line: Subtitle
 
       <textarea
         value={localComment}
-        onChange={(e) => { setLocalComment(e.target.value); if (canEdit) void updateComment(line.id, e.target.value) }}
+        onChange={(e) => {
+          const val = e.target.value
+          setLocalComment(val)
+          if (canEdit) {
+            void updateComment(line.id, val)
+            // Auto-tag sound if keyword detected
+            const currentTags = line.tags ?? []
+            if (AUDIO_KEYWORDS.test(val) && !currentTags.includes('sound')) {
+              void updateTags(line.id, [...currentTags, 'sound'])
+            }
+          }
+        }}
         onFocus={() => setCommentFocused(true)}
         onBlur={() => setCommentFocused(false)}
         readOnly={!canEdit}

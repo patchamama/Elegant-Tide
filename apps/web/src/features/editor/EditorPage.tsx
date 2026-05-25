@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@elegant-tide/db'
-import { saveBookmarkLineId, loadBookmarkLineId, saveColumnState, loadColumnState } from '@/lib/projectionStorage'
+import { saveBookmarkLineId, loadBookmarkLineId, saveColumnState, loadColumnState, loadCurrentLineId } from '@/lib/projectionStorage'
 import { useProjectRole } from '@/hooks/useProjectRole'
 import { useLiveSync } from '@/hooks/useLiveSync'
 import { useProjectionStore } from '@/stores/useProjectionStore'
@@ -60,6 +60,13 @@ export function EditorPage() {
   // Listen for projection position from master (never sends when isMaster=false)
   useLiveSync(projectId, false)
   const currentLineId = useProjectionStore((s) => s.currentLineId)
+  const goTo = useProjectionStore((s) => s.goTo)
+
+  // Restore last projection position from localStorage on mount
+  useEffect(() => {
+    const saved = loadCurrentLineId(projectId)
+    if (saved && !currentLineId) goTo(saved)
+  }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
   const [showImport, setShowImport] = useState(false)
   const [showExport, setShowExport] = useState(false)
   const [showLangPicker, setShowLangPicker] = useState(false)
@@ -150,18 +157,22 @@ export function EditorPage() {
   }, [searchQuery, lines, showNotes, selectedColumn])
 
   // Lines to next sound/light cue from current projection position
+  const AUDIO_KW = /klingeln|musik|echo/i
   const { linesToNextSound, linesToNextLight } = useMemo(() => {
     if (!lines || !currentLineId) return { linesToNextSound: null, linesToNextLight: null }
     const idx = lines.findIndex((l) => l.id === currentLineId)
     if (idx === -1) return { linesToNextSound: null, linesToNextLight: null }
     const after = lines.slice(idx + 1)
-    const nextSound = after.findIndex((l) => l.tags?.includes('sound'))
-    const nextLight = after.findIndex((l) => l.tags?.includes('light'))
+    const isSoundLine = (l: typeof lines[0]) =>
+      l.tags?.includes('sound') || (l.comment ? AUDIO_KW.test(l.comment) : false)
+    const isLightLine = (l: typeof lines[0]) => l.tags?.includes('light')
+    const nextSound = after.findIndex(isSoundLine)
+    const nextLight = after.findIndex(isLightLine)
     return {
       linesToNextSound: nextSound === -1 ? null : nextSound + 1,
       linesToNextLight: nextLight === -1 ? null : nextLight + 1,
     }
-  }, [lines, currentLineId])
+  }, [lines, currentLineId]) // eslint-disable-line react-hooks/exhaustive-deps
 
 
   const activeMatch = searchMatches[searchMatchIndex] ?? null
@@ -461,18 +472,28 @@ export function EditorPage() {
         {linesToNextSound !== null && (
           <>
             <span>·</span>
-            <span className="flex items-center gap-1 text-sky-400">
+            <span className={clsx(
+              'flex items-center gap-1 font-semibold tabular-nums transition-colors',
+              linesToNextSound <= 3 ? 'text-red-400 animate-pulse' :
+              linesToNextSound <= 8 ? 'text-orange-400' :
+              'text-sky-400',
+            )}>
               <Volume2 size={11} />
-              <span className="tabular-nums">{linesToNextSound}</span>
+              <span>{linesToNextSound}</span>
             </span>
           </>
         )}
         {linesToNextLight !== null && (
           <>
             <span>·</span>
-            <span className="flex items-center gap-1 text-yellow-400">
+            <span className={clsx(
+              'flex items-center gap-1 font-semibold tabular-nums transition-colors',
+              linesToNextLight <= 3 ? 'text-red-400 animate-pulse' :
+              linesToNextLight <= 8 ? 'text-orange-400' :
+              'text-yellow-400',
+            )}>
               <Lightbulb size={11} />
-              <span className="tabular-nums">{linesToNextLight}</span>
+              <span>{linesToNextLight}</span>
             </span>
           </>
         )}
