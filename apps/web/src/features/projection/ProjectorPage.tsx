@@ -67,7 +67,17 @@ export function ProjectorPage() {
 
     const unsubGoto = bus.on('cue.goto', async (env) => {
       const line = await linesRepo.get(env.msg.payload.lineId)
-      setCurrentLine(line ?? null)
+      if (line) {
+        setCurrentLine(line)
+        // Auto-detect language if current one has no content
+        setLanguage((lang) => {
+          if (lang !== 'comment' && line.translations[lang as LangCode]?.trim()) return lang
+          const found = Object.entries(line.translations).find(([, v]) => v?.trim())
+          return found ? (found[0] as LangCode) : lang
+        })
+      } else {
+        setCurrentLine(null)
+      }
     })
 
     const unsubBlackout = bus.on('cue.blackout', (env) => {
@@ -84,9 +94,12 @@ export function ProjectorPage() {
 
     const unsubConfig = bus.on('projector.config', (env) => {
       const cfg = env.msg.payload.config
-      setLanguage(cfg.language)
-      setStyle(cfg.style)
-      if (typeof cfg.showMedia === 'boolean') setShowMedia(cfg.showMedia)
+      // Only apply configs sent FROM the control (avoid echo-ing our own broadcasts)
+      if (env.from.role === 'control') {
+        setLanguage(cfg.language)
+        setStyle(cfg.style)
+        if (typeof cfg.showMedia === 'boolean') setShowMedia(cfg.showMedia)
+      }
     })
 
     const unsubLineUpdated = bus.on('line.updated', (env) => {
@@ -114,6 +127,27 @@ export function ProjectorPage() {
       return next
     })
   }, [projectId])
+
+  // Notify control when local config changes (language/style/showMedia changed in this window)
+  const isFirstConfigRender = useRef(true)
+  useEffect(() => {
+    if (isFirstConfigRender.current) { isFirstConfigRender.current = false; return }
+    if (!busRef.current) return
+    busRef.current.send({
+      kind: 'projector.config',
+      payload: {
+        config: {
+          id: myWindowId.current,
+          label: 'Projector',
+          language,
+          style,
+          opacity: 1,
+          showMedia,
+          isOpen: true,
+        },
+      },
+    })
+  }, [language, style, showMedia]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

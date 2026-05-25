@@ -56,9 +56,11 @@ export function ControlPage() {
 
   const busRef = useRef<Bus | null>(null)
   const windowId = useRef(`control-${crypto.randomUUID().slice(0, 8)}`)
+  const onProjConfigRef = useRef<((incoming: ProjectorWindowConfig) => void) | null>(null)
 
   const [rightPanel, setRightPanel] = useState<'preview' | 'windows'>('preview')
   const [broadcastEnabled, setBroadcastEnabled] = useState(true)
+  const prevBroadcastRef = useRef(true)
   const [windowConfigs, setWindowConfigs] = useState<ProjectorWindowConfig[]>([])
   const [editingWindowId, setEditingWindowId] = useState<string | null>(null)
   const [audioPlaying, setAudioPlaying] = useState(false)
@@ -140,9 +142,16 @@ export function ControlPage() {
       if (currentLineId) bus.send({ kind: 'cue.goto', payload: { lineId: currentLineId } })
     })
 
+    // Projector notified us of a local config change — delegate to ref so we have access to persistWindowConfigs
+    const unsubProjConfig = bus.on('projector.config', (env) => {
+      if (env.from.role !== 'projector') return
+      onProjConfigRef.current?.(env.msg.payload.config)
+    })
+
     return () => {
       unsubState()
       unsubHello()
+      unsubProjConfig()
       bus.close()
       busRef.current = null
     }
@@ -183,6 +192,32 @@ export function ControlPage() {
     const updated = { ...project, projectorWindows: configs, updatedAt: Date.now() }
     await projectsRepo.upsert(updated)
   }, [project])
+
+  // When broadcast is re-enabled, push current line to projectors immediately
+  useEffect(() => {
+    const wasEnabled = prevBroadcastRef.current
+    prevBroadcastRef.current = broadcastEnabled
+    if (broadcastEnabled && !wasEnabled) {
+      const { currentLineId } = useProjectionStore.getState()
+      if (currentLineId) busRef.current?.send({ kind: 'cue.goto', payload: { lineId: currentLineId } })
+    } else if (!broadcastEnabled && wasEnabled) {
+      // Send blackout so projectors go dark while in preview-only mode
+      busRef.current?.send({ kind: 'cue.blackout', payload: { on: true } })
+    }
+  }, [broadcastEnabled])
+
+  // Wire projector→control config sync once persistWindowConfigs is ready
+  useEffect(() => {
+    onProjConfigRef.current = (incoming) => {
+      setWindowConfigs((prev) => {
+        const idx = prev.findIndex((w) => w.id === incoming.id)
+        if (idx === -1) return prev
+        const next = prev.map((w, i) => i === idx ? { ...w, language: incoming.language, style: incoming.style, showMedia: incoming.showMedia } : w)
+        void persistWindowConfigs(next)
+        return next
+      })
+    }
+  }, [persistWindowConfigs])
 
   const openProjectorWindow = useCallback((cfg: ProjectorWindowConfig) => {
     platformOpenProjector(projectId)
