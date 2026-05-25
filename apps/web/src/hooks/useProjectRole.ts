@@ -4,7 +4,7 @@ import type { ProjectRole } from '@elegant-tide/core-types'
 const key = (projectId: string) => `project:${projectId}:role`
 
 export function loadProjectRole(projectId: string): ProjectRole {
-  return (localStorage.getItem(key(projectId)) as ProjectRole) ?? 'viewer'
+  return (localStorage.getItem(key(projectId)) as ProjectRole) ?? 'master'
 }
 
 export function saveProjectRole(projectId: string, role: ProjectRole) {
