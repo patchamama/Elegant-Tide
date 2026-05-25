@@ -623,19 +623,6 @@ function CommentCell({ line, canEdit = true, openRanges = [] }: { line: Subtitle
   const handleCueMenuClick = (e: React.MouseEvent, kind: CueKind) => {
     e.stopPropagation()
     if (!canEdit) return
-    // If there's an open range of this kind, first suggest closing it
-    const openRange = openRanges.find((r) => r.kind === kind)
-    if (openRange) {
-      // Auto-suggest closing: add a range-end marker for the open range
-      addCue({
-        id: crypto.randomUUID(),
-        kind,
-        markerType: 'range-end',
-        name: openRange.name,
-        rangeId: openRange.rangeId,
-      })
-      return
-    }
     setCuePopup({ phase: 'menu', kind })
   }
 
@@ -702,69 +689,67 @@ function CommentCell({ line, canEdit = true, openRanges = [] }: { line: Subtitle
           )
         })}
 
-        {/* Add cue buttons */}
-        {canEdit && (
-          <>
-            <div className="relative">
-              <button
-                onClick={(e) => handleCueMenuClick(e, 'sound')}
-                title={soundRangeActive ? 'Close open sound range' : 'Add sound cue'}
-                className={clsx(
-                  'flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs transition-colors',
-                  hasSoundTag || soundCues.length > 0
-                    ? clsx(CUE_COLORS.sound.active, CUE_COLORS.sound.text, CUE_COLORS.sound.border, 'border')
-                    : soundRangeActive
-                    ? 'text-sky-400/70 border border-sky-600/50 bg-sky-950/30'
-                    : 'text-slate-600 hover:text-sky-400 border border-transparent',
-                )}
-              >
-                <Volume2 size={11} />
-                {soundRangeActive && <StopCircle size={9} className="ml-0.5" />}
-                {!soundRangeActive && <ChevronDown size={9} className="ml-0.5" />}
-              </button>
-
-              {cuePopup?.kind === 'sound' && (
-                <CuePopup
-                  kind="sound"
-                  popup={cuePopup}
-                  onSelect={(phase) => setCuePopup({ phase, kind: 'sound', name: '' })}
-                  onNameChange={(name) => setCuePopup((p) => p && p.phase !== 'menu' ? { ...p, name } : p)}
-                  onCommit={() => commitCue(cuePopup)}
-                  onClose={() => setCuePopup(null)}
-                />
+        {/* Add cue buttons — hidden when a cue of that kind already exists on this line */}
+        {canEdit && soundCues.length === 0 && (
+          <div className="relative">
+            <button
+              onClick={(e) => handleCueMenuClick(e, 'sound')}
+              title={soundRangeActive ? 'Close open sound range' : 'Add sound cue'}
+              className={clsx(
+                'flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs transition-colors',
+                soundRangeActive
+                  ? 'text-sky-400/70 border border-sky-600/50 bg-sky-950/30'
+                  : 'text-slate-600 hover:text-sky-400 border border-transparent',
               )}
-            </div>
+            >
+              <Volume2 size={11} />
+              {soundRangeActive ? <StopCircle size={9} className="ml-0.5" /> : <ChevronDown size={9} className="ml-0.5" />}
+            </button>
 
-            <div className="relative">
-              <button
-                onClick={(e) => handleCueMenuClick(e, 'light')}
-                title={lightRangeActive ? 'Close open light range' : 'Add light cue'}
-                className={clsx(
-                  'flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs transition-colors',
-                  hasLightTag || lightCues.length > 0
-                    ? clsx(CUE_COLORS.light.active, CUE_COLORS.light.text, CUE_COLORS.light.border, 'border')
-                    : lightRangeActive
-                    ? 'text-yellow-400/70 border border-yellow-600/50 bg-yellow-950/30'
-                    : 'text-slate-600 hover:text-yellow-400 border border-transparent',
-                )}
-              >
-                <Lightbulb size={11} />
-                {lightRangeActive && <StopCircle size={9} className="ml-0.5" />}
-                {!lightRangeActive && <ChevronDown size={9} className="ml-0.5" />}
-              </button>
+            {cuePopup?.kind === 'sound' && (
+              <CuePopup
+                kind="sound"
+                popup={cuePopup}
+                openRange={openRanges.find((r) => r.kind === 'sound') ?? undefined}
+                onSelect={(phase) => setCuePopup({ phase, kind: 'sound', name: '' })}
+                onNameChange={(name) => setCuePopup((p) => p && p.phase !== 'menu' ? { ...p, name } : p)}
+                onCommit={() => commitCue(cuePopup)}
+                onCloseRange={(r) => { addCue({ id: crypto.randomUUID(), kind: 'sound', markerType: 'range-end', name: r.name, rangeId: r.rangeId }); setCuePopup(null) }}
+                onClose={() => setCuePopup(null)}
+              />
+            )}
+          </div>
+        )}
 
-              {cuePopup?.kind === 'light' && (
-                <CuePopup
-                  kind="light"
-                  popup={cuePopup}
-                  onSelect={(phase) => setCuePopup({ phase, kind: 'light', name: '' })}
-                  onNameChange={(name) => setCuePopup((p) => p && p.phase !== 'menu' ? { ...p, name } : p)}
-                  onCommit={() => commitCue(cuePopup)}
-                  onClose={() => setCuePopup(null)}
-                />
+        {canEdit && lightCues.length === 0 && (
+          <div className="relative">
+            <button
+              onClick={(e) => handleCueMenuClick(e, 'light')}
+              title={lightRangeActive ? 'Close open light range' : 'Add light cue'}
+              className={clsx(
+                'flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs transition-colors',
+                lightRangeActive
+                  ? 'text-yellow-400/70 border border-yellow-600/50 bg-yellow-950/30'
+                  : 'text-slate-600 hover:text-yellow-400 border border-transparent',
               )}
-            </div>
-          </>
+            >
+              <Lightbulb size={11} />
+              {lightRangeActive ? <StopCircle size={9} className="ml-0.5" /> : <ChevronDown size={9} className="ml-0.5" />}
+            </button>
+
+            {cuePopup?.kind === 'light' && (
+              <CuePopup
+                kind="light"
+                popup={cuePopup}
+                openRange={openRanges.find((r) => r.kind === 'light') ?? undefined}
+                onSelect={(phase) => setCuePopup({ phase, kind: 'light', name: '' })}
+                onNameChange={(name) => setCuePopup((p) => p && p.phase !== 'menu' ? { ...p, name } : p)}
+                onCommit={() => commitCue(cuePopup)}
+                onCloseRange={(r) => { addCue({ id: crypto.randomUUID(), kind: 'light', markerType: 'range-end', name: r.name, rangeId: r.rangeId }); setCuePopup(null) }}
+                onClose={() => setCuePopup(null)}
+              />
+            )}
+          </div>
         )}
       </div>
 
@@ -821,16 +806,20 @@ function CommentCell({ line, canEdit = true, openRanges = [] }: { line: Subtitle
 function CuePopup({
   kind,
   popup,
+  openRange,
   onSelect,
   onNameChange,
   onCommit,
+  onCloseRange,
   onClose,
 }: {
   kind: CueKind
   popup: CuePopupState
+  openRange?: OpenRange | undefined
   onSelect: (phase: 'name-start' | 'name-point') => void
   onNameChange: (name: string) => void
   onCommit: () => void
+  onCloseRange: (r: OpenRange) => void
   onClose: () => void
 }) {
   if (!popup) return null
@@ -840,12 +829,24 @@ function CuePopup({
     <>
       <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); onClose() }} />
       <div
-        className="absolute left-0 top-7 z-50 w-52 rounded-xl border border-slate-600 shadow-2xl py-1"
+        className="absolute left-0 top-7 z-50 w-56 rounded-xl border border-slate-600 shadow-2xl py-1"
         style={{ backgroundColor: 'rgb(15 23 42)' }}
         onClick={(e) => e.stopPropagation()}
       >
         {popup.phase === 'menu' && (
           <>
+            {openRange && (
+              <>
+                <button
+                  onClick={() => onCloseRange(openRange)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-800 text-slate-300 transition-colors"
+                >
+                  <StopCircle size={11} className={colors.text} />
+                  <span>End "{openRange.name}"</span>
+                </button>
+                <div className="mx-3 my-1 border-t border-slate-700/60" />
+              </>
+            )}
             <button
               onClick={() => onSelect('name-point')}
               className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-800 text-slate-300 transition-colors"
