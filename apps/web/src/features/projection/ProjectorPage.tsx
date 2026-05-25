@@ -41,6 +41,8 @@ export function ProjectorPage() {
 
     bus.send({ kind: 'hello', payload: { role: 'projector', windowId: myWindowId.current, userAgent: navigator.userAgent } })
     bus.send({ kind: 'state.request', payload: {} })
+    // Retry in case control page hadn't registered its listener yet
+    const retryTimer = setTimeout(() => bus.send({ kind: 'state.request', payload: {} }), 600)
 
     // Load all lines for local next/prev navigation
     void db.lines
@@ -93,6 +95,7 @@ export function ProjectorPage() {
     })
 
     return () => {
+      clearTimeout(retryTimer)
       unsubGoto(); unsubBlackout(); unsubSnapshot(); unsubConfig(); unsubLineUpdated()
       bus.close()
       busRef.current = null

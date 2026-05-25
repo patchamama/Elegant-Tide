@@ -127,13 +127,22 @@ export function ControlPage() {
     const bus = createBus({ projectId, windowId: windowId.current, role: 'control' })
     busRef.current = bus
 
-    const unsubState = bus.on('state.request', () => {
+    const sendSnapshot = () => {
       const { currentLineId, blackout, freeze } = useProjectionStore.getState()
       bus.send({ kind: 'state.snapshot', payload: { currentLineId, blackout, freeze } })
+    }
+
+    const unsubState = bus.on('state.request', sendSnapshot)
+    // Projector just opened — send snapshot + explicit goto so it loads the line
+    const unsubHello = bus.on('hello', () => {
+      sendSnapshot()
+      const { currentLineId } = useProjectionStore.getState()
+      if (currentLineId) bus.send({ kind: 'cue.goto', payload: { lineId: currentLineId } })
     })
 
     return () => {
       unsubState()
+      unsubHello()
       bus.close()
       busRef.current = null
     }
