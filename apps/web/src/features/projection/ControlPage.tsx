@@ -58,6 +58,7 @@ export function ControlPage() {
   const windowId = useRef(`control-${crypto.randomUUID().slice(0, 8)}`)
 
   const [rightPanel, setRightPanel] = useState<'preview' | 'windows'>('preview')
+  const [broadcastEnabled, setBroadcastEnabled] = useState(true)
   const [windowConfigs, setWindowConfigs] = useState<ProjectorWindowConfig[]>([])
   const [editingWindowId, setEditingWindowId] = useState<string | null>(null)
   const [audioPlaying, setAudioPlaying] = useState(false)
@@ -139,9 +140,9 @@ export function ControlPage() {
   }, [projectId])
 
   const sendGoto = useCallback((lineId: string) => {
-    busRef.current?.send({ kind: 'cue.goto', payload: { lineId } })
+    if (broadcastEnabled) busRef.current?.send({ kind: 'cue.goto', payload: { lineId } })
     saveCurrentLineId(projectId, lineId)
-  }, [projectId])
+  }, [projectId, broadcastEnabled])
 
   const handleGoto = useCallback(
     (lineId: string) => { goTo(lineId); sendGoto(lineId) },
@@ -487,6 +488,22 @@ export function ControlPage() {
                   </div>
                 )
               })()}
+
+              {/* Broadcast toggle */}
+              <div className="px-4 py-2 border-t border-slate-800 flex items-center justify-between">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={broadcastEnabled}
+                    onChange={(e) => setBroadcastEnabled(e.target.checked)}
+                    className="accent-brand-500"
+                  />
+                  <span className="text-xs text-slate-300">Show on projectors</span>
+                </label>
+                {!broadcastEnabled && (
+                  <span className="text-xs text-amber-400 font-medium">Preview only</span>
+                )}
+              </div>
 
               {/* Progress bar */}
               {visibleLines.length > 0 && (
