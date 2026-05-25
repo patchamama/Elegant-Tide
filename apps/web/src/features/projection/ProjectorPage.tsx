@@ -158,9 +158,18 @@ export function ProjectorPage() {
         </div>
       )}
 
-      {/* Subtitle text — bottom strip */}
+      {/* Subtitle text — positioned by verticalAlign */}
       {!blackout && text && (
-        <div className="absolute bottom-12 inset-x-0 flex justify-center px-8">
+        <div
+          className="absolute inset-x-0 flex justify-center px-8"
+          style={
+            (style.verticalAlign ?? 'center') === 'top'
+              ? { top: '2rem' }
+              : (style.verticalAlign ?? 'center') === 'bottom'
+              ? { bottom: '3rem' }
+              : { top: '50%', transform: 'translateY(-50%)' }
+          }
+        >
           <div
             style={{
               fontFamily: style.fontFamily,
@@ -246,13 +255,29 @@ export function ProjectorPage() {
 
           {/* Text align */}
           <div>
-            <span className="text-slate-400 text-xs block mb-1">Alignment</span>
+            <span className="text-slate-400 text-xs block mb-1">Horizontal</span>
             <div className="flex gap-1">
               {(['left', 'center', 'right'] as const).map((a) => (
                 <button
                   key={a}
                   onClick={() => setStyle((s) => ({ ...s, textAlign: a }))}
                   className={`flex-1 py-1 rounded text-xs capitalize transition-colors ${style.textAlign === a ? 'bg-brand-600 text-white' : 'bg-white/10 text-slate-400 hover:bg-white/20'}`}
+                >
+                  {a}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Vertical align */}
+          <div>
+            <span className="text-slate-400 text-xs block mb-1">Vertical</span>
+            <div className="flex gap-1">
+              {(['top', 'center', 'bottom'] as const).map((a) => (
+                <button
+                  key={a}
+                  onClick={() => setStyle((s) => ({ ...s, verticalAlign: a }))}
+                  className={`flex-1 py-1 rounded text-xs capitalize transition-colors ${(style.verticalAlign ?? 'center') === a ? 'bg-brand-600 text-white' : 'bg-white/10 text-slate-400 hover:bg-white/20'}`}
                 >
                   {a}
                 </button>

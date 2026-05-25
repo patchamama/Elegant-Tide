@@ -4,12 +4,14 @@ import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, projectsRepo } from '@elegant-tide/db'
 import { useProjectionStore } from '@/stores/useProjectionStore'
+import { useEditorStore } from '@/stores/useEditorStore'
 import { createBus, type Bus } from '@elegant-tide/broadcast-protocol'
 import type { LangCode, ProjectionChannel, ProjectorWindowConfig, ProjectionStyle } from '@elegant-tide/core-types'
 import { DEFAULT_PROJECTION_STYLE } from '@elegant-tide/core-types'
 import { openProjectorWindow as platformOpenProjector, isCapacitor } from '@/lib/platform'
 import { saveCurrentLineId, loadCurrentLineId } from '@/lib/projectionStorage'
 import { useLiveSync } from '@/hooks/useLiveSync'
+import { LineList } from '@/features/editor/LineList'
 import {
   ArrowLeft, ChevronLeft, ChevronRight, EyeOff, ExternalLink,
   Monitor, Pause, Plus, Trash2, Settings,
@@ -40,6 +42,7 @@ export function ControlPage() {
 
   const { currentLineId, blackout, freeze, goTo, next, prev, toggleBlackout, toggleFreeze, setLines } =
     useProjectionStore()
+  const syncLines = useEditorStore((s) => s.syncLines)
 
   // Broadcast current line to other devices via SSE + BroadcastChannel
   useLiveSync(projectId, true)
@@ -73,15 +76,16 @@ export function ControlPage() {
     }
   }, [project])
 
-  // Keep projection store in sync with live lines + restore last position
+  // Keep projection store + editor store in sync with live lines
   useEffect(() => {
     if (!lines) return
     setLines(lines)
+    syncLines(lines)
     if (!currentLineId) {
       const saved = loadCurrentLineId(projectId)
       if (saved && lines.some((l) => l.id === saved)) goTo(saved)
     }
-  }, [lines, setLines]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lines, setLines, syncLines]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Single bus instance for the lifetime of this page
   useEffect(() => {
@@ -287,33 +291,25 @@ export function ControlPage() {
         {/* ── SCRIPT PANEL ─────────────────────────────────────────── */}
         {activePanel === 'lines' && (
           <>
-            <div className="flex-1 overflow-y-auto">
-              {visibleLines.map((line, idx) => (
-                <button
-                  key={line.id}
-                  data-testid="cue-line"
-                  onClick={() => handleGoto(line.id)}
-                  className={clsx(
-                    'w-full text-left px-6 py-4 border-b border-slate-800/60 transition-all',
-                    line.id === currentLineId
-                      ? 'bg-brand-900/30 border-l-[3px] border-l-brand-500 pl-5'
-                      : 'hover:bg-slate-900',
-                  )}
-                >
-                  <span className="text-xs text-slate-600 mr-4 tabular-nums">{idx + 1}</span>
-                  {line.type === 'media' ? (
-                    <span className="text-purple-400 text-sm italic">
-                      🎬 {line.media?.sourceType ?? 'media'} — {line.media?.url ?? ''}
-                    </span>
-                  ) : (
-                    <span className={line.id === currentLineId ? 'text-white font-medium' : 'text-slate-300'}>
-                      {line.translations[primaryLang] ?? (
-                        <em className="text-slate-600 text-sm">No translation</em>
-                      )}
-                    </span>
-                  )}
-                </button>
-              ))}
+            {/* Line list — same visual as editor, read-only, click to go-to */}
+            <div className="flex-1 overflow-hidden flex flex-col" onClick={(e) => {
+              // Intercept line-row clicks to trigger goto instead of edit
+              const row = (e.target as HTMLElement).closest('[data-testid="line-row"]') as HTMLElement | null
+              if (row) {
+                const lineId = row.getAttribute('data-line-id')
+                if (lineId) handleGoto(lineId)
+              }
+            }}>
+              <LineList
+                lines={lines ?? []}
+                languages={project.languages as LangCode[]}
+                primaryLang={primaryLang}
+                projectId={projectId}
+                canEditSubtitles={false}
+                canEditComments={false}
+                followLineId={currentLineId}
+                isFollowing={true}
+              />
             </div>
 
             {/* Right panel — preview + controls */}
@@ -326,7 +322,7 @@ export function ControlPage() {
                   </div>
                 ) : currentLineId ? (
                   <p className="text-white text-xl text-center leading-relaxed">
-                    {visibleLines.find((l) => l.id === currentLineId)?.translations[primaryLang] ?? ''}
+                    {(lines ?? []).find((l) => l.id === currentLineId)?.translations[primaryLang] ?? ''}
                   </p>
                 ) : (
                   <p className="text-slate-600 text-sm italic">Select a line to preview</p>
@@ -492,7 +488,7 @@ export function ControlPage() {
                 <label className="block">
                   <span className="text-xs text-slate-400 block mb-1">Line height: {editingWindow.style.lineHeight}</span>
                   <input
-                    type="range" min={1} max={2.5} step={0.05}
+                    type="range" min={1} max={4} step={0.05}
                     value={editingWindow.style.lineHeight}
                     onChange={(e) => updateWindowStyle(editingWindow.id, { lineHeight: Number(e.target.value) })}
                     className="w-full accent-brand-500"
@@ -529,7 +525,7 @@ export function ControlPage() {
 
                 {/* Text align */}
                 <div>
-                  <span className="text-xs text-slate-400 block mb-1">Text alignment</span>
+                  <span className="text-xs text-slate-400 block mb-1">Horizontal alignment</span>
                   <div className="flex gap-1">
                     {(['left', 'center', 'right'] as const).map((a) => (
                       <button
@@ -538,6 +534,25 @@ export function ControlPage() {
                         className={clsx(
                           'flex-1 py-2 rounded-lg text-xs capitalize transition-colors',
                           editingWindow.style.textAlign === a ? 'bg-brand-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700',
+                        )}
+                      >
+                        {a}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Vertical align */}
+                <div>
+                  <span className="text-xs text-slate-400 block mb-1">Vertical alignment</span>
+                  <div className="flex gap-1">
+                    {(['top', 'center', 'bottom'] as const).map((a) => (
+                      <button
+                        key={a}
+                        onClick={() => updateWindowStyle(editingWindow.id, { verticalAlign: a })}
+                        className={clsx(
+                          'flex-1 py-2 rounded-lg text-xs capitalize transition-colors',
+                          (editingWindow.style.verticalAlign ?? 'center') === a ? 'bg-brand-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700',
                         )}
                       >
                         {a}

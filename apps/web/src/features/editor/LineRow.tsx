@@ -179,6 +179,7 @@ export function LineRow({
       ref={setNodeRef}
       style={style}
       data-testid="line-row"
+      data-line-id={line.id}
       className={clsx(
         'group flex items-start gap-1 px-3 py-2 border-b transition-colors',
         rowBg,

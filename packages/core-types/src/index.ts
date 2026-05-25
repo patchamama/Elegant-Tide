@@ -32,6 +32,7 @@ export interface ProjectionStyle {
   textShadow: string      // CSS shadow string, '' to disable
   paddingPx: number
   textAlign: 'left' | 'center' | 'right'
+  verticalAlign: 'top' | 'center' | 'bottom'
   lineHeight: number      // unitless multiplier
   borderRadiusPx?: number
 }
@@ -45,6 +46,7 @@ export const DEFAULT_PROJECTION_STYLE: ProjectionStyle = {
   textShadow: '0 2px 4px rgba(0,0,0,0.8)',
   paddingPx: 16,
   textAlign: 'center',
+  verticalAlign: 'center',
   lineHeight: 1.4,
   borderRadiusPx: 4,
 }
