@@ -16,7 +16,7 @@ import { LineList } from '@/features/editor/LineList'
 import {
   ArrowLeft, ChevronLeft, ChevronRight, EyeOff, ExternalLink,
   Monitor, Pause, Plus, Trash2, Settings, Play, Volume2,
-  Search, ChevronUp, ChevronDown, X as XIcon, Lightbulb, Radio,
+  Search, ChevronUp, ChevronDown, X as XIcon, Lightbulb, Radio, MessageSquare,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -67,6 +67,7 @@ export function ControlPage() {
   const [audioProgress, setAudioProgress] = useState<{ current: number; duration: number }>({ current: 0, duration: 0 })
   const [searchQuery, setSearchQuery] = useState('')
   const [searchMatchIndex, setSearchMatchIndex] = useState(0)
+  const [showNotes, setShowNotes] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   const project = useLiveQuery(() => db.projects.get(projectId), [projectId])
@@ -198,10 +199,11 @@ export function ControlPage() {
     const wasEnabled = prevBroadcastRef.current
     prevBroadcastRef.current = broadcastEnabled
     if (broadcastEnabled && !wasEnabled) {
+      // Lift blackout first, then send current line
+      busRef.current?.send({ kind: 'cue.blackout', payload: { on: false } })
       const { currentLineId } = useProjectionStore.getState()
       if (currentLineId) busRef.current?.send({ kind: 'cue.goto', payload: { lineId: currentLineId } })
     } else if (!broadcastEnabled && wasEnabled) {
-      // Send blackout so projectors go dark while in preview-only mode
       busRef.current?.send({ kind: 'cue.blackout', payload: { on: true } })
     }
   }, [broadcastEnabled])
@@ -463,10 +465,12 @@ export function ControlPage() {
             projectId={projectId}
             canEditSubtitles={false}
             canEditComments={false}
+            showNotes={showNotes}
             searchQuery={searchQuery}
             activeMatchLineId={activeMatch?.lineId ?? null}
+            activeMatchIndex={activeMatch ? (lines ?? []).findIndex(l => l.id === activeMatch.lineId) : null}
             followLineId={currentLineId}
-            isFollowing={true}
+            isFollowing={!searchQuery}
             onLineActivate={handleGoto}
           />
         </div>
@@ -811,7 +815,18 @@ export function ControlPage() {
           </>
         )}
 
-        <span className="ml-auto text-slate-700">Space/→ next · ← prev · B blackout</span>
+        <button
+          onClick={() => setShowNotes(v => !v)}
+          className={clsx(
+            'ml-auto flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs transition-colors',
+            showNotes ? 'text-amber-400 bg-amber-950/30' : 'text-slate-600 hover:text-slate-400',
+          )}
+          title="Toggle notes column"
+        >
+          <MessageSquare size={12} />
+          Notes
+        </button>
+        <span className="text-slate-700">Space/→ · ← · B</span>
       </footer>
     </div>
   )

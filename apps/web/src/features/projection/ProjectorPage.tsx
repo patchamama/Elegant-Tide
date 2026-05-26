@@ -5,9 +5,14 @@ import type { SubtitleLine, LangCode, ProjectionChannel, ProjectionStyle, MediaP
 import { DEFAULT_PROJECTION_STYLE } from '@elegant-tide/core-types'
 import { linesRepo, db, projectsRepo } from '@elegant-tide/db'
 import ReactPlayer from 'react-player'
-import { Settings, X, FileDown, Save, Check } from 'lucide-react'
+import { Settings, X, FileDown, Save, Check, Maximize2, Edit3 } from 'lucide-react'
 import { saveCurrentLineId, loadCurrentLineId } from '@/lib/projectionStorage'
 import { exportPdf, type PdfPageSize } from '@/lib/exportPdf'
+import { useProjectRole } from '@/hooks/useProjectRole'
+import { LineList } from '@/features/editor/LineList'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { useProjectionStore } from '@/stores/useProjectionStore'
+import { useEditorStore } from '@/stores/useEditorStore'
 
 const LANG_OPTIONS: { value: LangCode; label: string }[] = [
   { value: 'en', label: 'English' },
@@ -30,10 +35,31 @@ export function ProjectorPage() {
   const [showMedia, setShowMedia] = useState(true)
   const [pdfPageSize, setPdfPageSize] = useState<PdfPageSize>('a4')
   const [savedFeedback, setSavedFeedback] = useState(false)
+  const [bgVideoUrl, setBgVideoUrl] = useState('')
+  const [bgVideoInput, setBgVideoInput] = useState('')
+  const [showEditor, setShowEditor] = useState(false)
   const busRef = useRef<ReturnType<typeof createBus> | null>(null)
   const allLinesRef = useRef<SubtitleLine[]>([])
-
+  const containerRef = useRef<HTMLDivElement>(null)
   const myWindowId = useRef(`projector-${crypto.randomUUID().slice(0, 8)}`)
+
+  const { isMaster, canEditSubtitles, canEditComments } = useProjectRole(projectId)
+
+  // For editor overlay
+  const lines = useLiveQuery(
+    () => db.lines
+      .where('[projectId+order]')
+      .between([projectId, -Infinity], [projectId, Infinity])
+      .filter((l) => !l.deletedAt)
+      .sortBy('order'),
+    [projectId],
+  )
+  const syncLines = useEditorStore((s) => s.syncLines)
+  const { goTo } = useProjectionStore()
+
+  useEffect(() => {
+    if (lines) syncLines(lines)
+  }, [lines]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const bus = createBus({ projectId, windowId: myWindowId.current, role: 'projector' })
@@ -41,10 +67,8 @@ export function ProjectorPage() {
 
     bus.send({ kind: 'hello', payload: { role: 'projector', windowId: myWindowId.current, userAgent: navigator.userAgent } })
     bus.send({ kind: 'state.request', payload: {} })
-    // Retry in case control page hadn't registered its listener yet
     const retryTimer = setTimeout(() => bus.send({ kind: 'state.request', payload: {} }), 600)
 
-    // Load all lines for local next/prev navigation
     void db.lines
       .where('[projectId+order]')
       .between([projectId, -Infinity], [projectId, Infinity])
@@ -52,14 +76,12 @@ export function ProjectorPage() {
       .sortBy('order')
       .then((ls) => {
         allLinesRef.current = ls
-        // Restore last position if no state.snapshot comes within 300ms
         const saved = loadCurrentLineId(projectId)
         if (saved) {
           setTimeout(() => {
             setCurrentLine((cur) => {
               if (cur) return cur
-              const found = ls.find((l) => l.id === saved)
-              return found ?? null
+              return ls.find((l) => l.id === saved) ?? null
             })
           }, 300)
         }
@@ -69,7 +91,7 @@ export function ProjectorPage() {
       const line = await linesRepo.get(env.msg.payload.lineId)
       if (line) {
         setCurrentLine(line)
-        // Auto-detect language if current one has no content
+        goTo(line.id)
         setLanguage((lang) => {
           if (lang !== 'comment' && line.translations[lang as LangCode]?.trim()) return lang
           const found = Object.entries(line.translations).find(([, v]) => v?.trim())
@@ -89,12 +111,12 @@ export function ProjectorPage() {
       if (env.msg.payload.currentLineId) {
         const line = await linesRepo.get(env.msg.payload.currentLineId)
         setCurrentLine(line ?? null)
+        if (line) goTo(line.id)
       }
     })
 
     const unsubConfig = bus.on('projector.config', (env) => {
       const cfg = env.msg.payload.config
-      // Only apply configs sent FROM the control (avoid echo-ing our own broadcasts)
       if (env.from.role === 'control') {
         setLanguage(cfg.language)
         setStyle(cfg.style)
@@ -113,14 +135,14 @@ export function ProjectorPage() {
       bus.close()
       busRef.current = null
     }
-  }, [projectId])
+  }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const navigateProjector = useCallback((dir: 1 | -1) => {
-    const lines = allLinesRef.current
-    if (lines.length === 0) return
+    const ls = allLinesRef.current
+    if (ls.length === 0) return
     setCurrentLine((cur) => {
-      const idx = cur ? lines.findIndex((l) => l.id === cur.id) : -1
-      const next = lines[idx + dir]
+      const idx = cur ? ls.findIndex((l) => l.id === cur.id) : -1
+      const next = ls[idx + dir]
       if (!next) return cur
       saveCurrentLineId(projectId, next.id)
       busRef.current?.send({ kind: 'cue.goto', payload: { lineId: next.id } })
@@ -128,7 +150,17 @@ export function ProjectorPage() {
     })
   }, [projectId])
 
-  // Notify control when local config changes (language/style/showMedia changed in this window)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (showEditor) return
+      if (e.code === 'ArrowRight' || e.code === 'ArrowDown' || e.code === 'Space') { e.preventDefault(); navigateProjector(1) }
+      if (e.code === 'ArrowLeft' || e.code === 'ArrowUp') { e.preventDefault(); navigateProjector(-1) }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [navigateProjector, showEditor])
+
+  // Notify control when local config changes
   const isFirstConfigRender = useRef(true)
   useEffect(() => {
     if (isFirstConfigRender.current) { isFirstConfigRender.current = false; return }
@@ -149,24 +181,15 @@ export function ProjectorPage() {
     })
   }, [language, style, showMedia]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.code === 'ArrowRight' || e.code === 'ArrowDown' || e.code === 'Space') { e.preventDefault(); navigateProjector(1) }
-      if (e.code === 'ArrowLeft' || e.code === 'ArrowUp') { e.preventDefault(); navigateProjector(-1) }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [navigateProjector])
-
   const handleExportPdf = useCallback(async () => {
     const project = await db.projects.get(projectId)
     if (!project) return
-    const lines = await db.lines
+    const ls = await db.lines
       .where('[projectId+order]')
       .between([projectId, -Infinity], [projectId, Infinity])
       .filter((l) => !l.deletedAt)
       .sortBy('order')
-    exportPdf(lines, project.primaryLanguage as LangCode, project.name, style, pdfPageSize)
+    exportPdf(ls, project.primaryLanguage as LangCode, project.name, style, pdfPageSize)
   }, [projectId, style, pdfPageSize])
 
   const handleSaveConfig = useCallback(async () => {
@@ -180,18 +203,45 @@ export function ProjectorPage() {
     setTimeout(() => setSavedFeedback(false), 2000)
   }, [projectId, language, style, showMedia])
 
+  const handleFullscreen = useCallback(() => {
+    const el = containerRef.current
+    if (!el) return
+    if (!document.fullscreenElement) {
+      void el.requestFullscreen()
+    } else {
+      void document.exitFullscreen()
+    }
+  }, [])
+
   const text = (!blackout && currentLine?.type !== 'media')
     ? language === 'comment'
       ? (currentLine?.comment ?? '')
       : (currentLine?.translations[language as LangCode] ?? '')
     : ''
   const media: MediaPayload | undefined = currentLine?.type === 'media' ? currentLine.media : undefined
+  const activeBgVideo = bgVideoUrl || (showMedia && media?.url ? undefined : undefined)
 
   return (
     <div
+      ref={containerRef}
       className="min-h-screen overflow-hidden relative select-none"
       style={{ background: '#000' }}
     >
+      {/* Background video (manual URL) */}
+      {bgVideoUrl && (
+        <div className="absolute inset-0 pointer-events-none">
+          <ReactPlayer
+            url={bgVideoUrl}
+            playing
+            loop
+            volume={0.7}
+            width="100%"
+            height="100%"
+            style={{ position: 'absolute', inset: 0 }}
+          />
+        </div>
+      )}
+
       {/* Media player — full screen background */}
       {showMedia && !blackout && media?.url && (
         <div className="absolute inset-0 flex items-center justify-center">
@@ -211,7 +261,7 @@ export function ProjectorPage() {
         </div>
       )}
 
-      {/* Subtitle text — positioned by verticalAlign */}
+      {/* Subtitle text */}
       {!blackout && text && (
         <div
           className="absolute inset-x-0 flex justify-center px-8"
@@ -245,9 +295,33 @@ export function ProjectorPage() {
         </div>
       )}
 
-      {/* Settings overlay — appears on mouse move */}
+      {/* Editor overlay — master only */}
+      {showEditor && isMaster && lines && (
+        <div className="absolute inset-0 bg-slate-950/95 z-40 flex flex-col">
+          <div className="flex items-center justify-between px-4 py-2 border-b border-slate-800 flex-shrink-0">
+            <span className="text-sm font-medium text-white">Script Editor</span>
+            <button onClick={() => setShowEditor(false)} className="p-1.5 text-slate-400 hover:text-white">
+              <X size={16} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <LineList
+              lines={lines}
+              languages={language === 'comment' ? [] : [language as LangCode]}
+              primaryLang={(language === 'comment' ? 'en' : language) as LangCode}
+              projectId={projectId}
+              canEditSubtitles={canEditSubtitles}
+              canEditComments={canEditComments}
+              followLineId={currentLine?.id ?? null}
+              isFollowing={true}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Settings overlay */}
       {showSettings && (
-        <div className="absolute top-0 right-0 m-4 bg-black/80 border border-white/10 rounded-2xl p-4 w-72 backdrop-blur-sm text-white text-sm space-y-4 z-50">
+        <div className="absolute top-0 right-0 m-4 bg-black/80 border border-white/10 rounded-2xl p-4 w-72 backdrop-blur-sm text-white text-sm space-y-4 z-50 max-h-[90vh] overflow-y-auto">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Settings size={14} className="text-slate-400" />
@@ -284,7 +358,7 @@ export function ProjectorPage() {
             />
           </label>
 
-          {/* Text color */}
+          {/* Colors */}
           <div className="flex items-center gap-3">
             <label className="flex-1">
               <span className="text-slate-400 text-xs block mb-1">Text color</span>
@@ -306,18 +380,15 @@ export function ProjectorPage() {
             </label>
           </div>
 
-          {/* Text align */}
+          {/* Horizontal align */}
           <div>
             <span className="text-slate-400 text-xs block mb-1">Horizontal</span>
             <div className="flex gap-1">
               {(['left', 'center', 'right'] as const).map((a) => (
-                <button
-                  key={a}
+                <button key={a}
                   onClick={() => setStyle((s) => ({ ...s, textAlign: a }))}
                   className={`flex-1 py-1 rounded text-xs capitalize transition-colors ${style.textAlign === a ? 'bg-brand-600 text-white' : 'bg-white/10 text-slate-400 hover:bg-white/20'}`}
-                >
-                  {a}
-                </button>
+                >{a}</button>
               ))}
             </div>
           </div>
@@ -327,13 +398,10 @@ export function ProjectorPage() {
             <span className="text-slate-400 text-xs block mb-1">Vertical</span>
             <div className="flex gap-1">
               {(['top', 'center', 'bottom'] as const).map((a) => (
-                <button
-                  key={a}
+                <button key={a}
                   onClick={() => setStyle((s) => ({ ...s, verticalAlign: a }))}
                   className={`flex-1 py-1 rounded text-xs capitalize transition-colors ${(style.verticalAlign ?? 'center') === a ? 'bg-brand-600 text-white' : 'bg-white/10 text-slate-400 hover:bg-white/20'}`}
-                >
-                  {a}
-                </button>
+                >{a}</button>
               ))}
             </div>
           </div>
@@ -348,6 +416,37 @@ export function ProjectorPage() {
             />
             <span className="text-sm text-slate-300">Show media cues</span>
           </label>
+
+          <hr className="border-white/10" />
+
+          {/* Background video URL */}
+          <div className="space-y-2">
+            <span className="text-slate-400 text-xs block">Background video (YouTube / Vimeo / URL)</span>
+            <input
+              type="text"
+              value={bgVideoInput}
+              onChange={(e) => setBgVideoInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') setBgVideoUrl(bgVideoInput.trim()) }}
+              placeholder="https://youtube.com/watch?v=..."
+              className="w-full bg-white/10 border border-white/10 rounded-lg px-2 py-1.5 text-xs outline-none placeholder-slate-600"
+            />
+            <div className="flex gap-1">
+              <button
+                onClick={() => setBgVideoUrl(bgVideoInput.trim())}
+                className="flex-1 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs text-slate-300 transition-colors"
+              >
+                Apply
+              </button>
+              {bgVideoUrl && (
+                <button
+                  onClick={() => { setBgVideoUrl(''); setBgVideoInput('') }}
+                  className="px-3 py-1.5 rounded-lg bg-red-900/40 hover:bg-red-900/60 text-xs text-red-300 transition-colors"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
 
           <hr className="border-white/10" />
 
@@ -382,18 +481,38 @@ export function ProjectorPage() {
             {savedFeedback ? <Check size={14} /> : <Save size={14} />}
             {savedFeedback ? 'Saved!' : 'Save configuration'}
           </button>
+
+          {/* Fullscreen */}
+          <button
+            onClick={handleFullscreen}
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 text-sm transition-colors"
+          >
+            <Maximize2 size={14} />
+            Fullscreen
+          </button>
         </div>
       )}
 
-      {/* Settings trigger */}
-      {!showSettings && (
-        <button
-          onClick={() => setShowSettings(true)}
-          className="absolute top-4 right-4 p-2 text-white/20 hover:text-white/60 transition-colors z-40"
-        >
-          <Settings size={14} />
-        </button>
-      )}
+      {/* Top-right controls — settings + editor (master only) */}
+      <div className="absolute top-4 right-4 flex gap-2 z-40">
+        {isMaster && !showEditor && (
+          <button
+            onClick={() => setShowEditor(true)}
+            className="p-2 text-white/20 hover:text-white/60 transition-colors"
+            title="Open script editor"
+          >
+            <Edit3 size={14} />
+          </button>
+        )}
+        {!showSettings && (
+          <button
+            onClick={() => setShowSettings(true)}
+            className="p-2 text-white/20 hover:text-white/60 transition-colors"
+          >
+            <Settings size={14} />
+          </button>
+        )}
+      </div>
     </div>
   )
 }
