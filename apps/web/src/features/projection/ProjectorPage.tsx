@@ -32,6 +32,7 @@ export function ProjectorPage() {
   const [language, setLanguage] = useState<ProjectionChannel>('en')
   const [style, setStyle] = useState<ProjectionStyle>(DEFAULT_PROJECTION_STYLE)
   const [showSettings, setShowSettings] = useState(false)
+  const [fullscreenRequested, setFullscreenRequested] = useState(false)
   const [showMedia, setShowMedia] = useState(true)
   const [pdfPageSize, setPdfPageSize] = useState<PdfPageSize>('a4')
   const [savedFeedback, setSavedFeedback] = useState(false)
@@ -145,13 +146,14 @@ export function ProjectorPage() {
     })
 
     const unsubFullscreen = bus.on('projector.fullscreen', (env) => {
-      const el = containerRef.current
-      if (!el) return
       setShowSettings(false)
       if (env.msg.payload.on) {
-        void el.requestFullscreen()
-      } else if (document.fullscreenElement) {
-        void document.exitFullscreen()
+        if (document.fullscreenElement) return  // already fullscreen
+        // requestFullscreen requires a user gesture — show tap overlay
+        setFullscreenRequested(true)
+      } else {
+        setFullscreenRequested(false)
+        if (document.fullscreenElement) void document.exitFullscreen()
       }
     })
 
@@ -255,6 +257,24 @@ export function ProjectorPage() {
       className="min-h-screen overflow-hidden relative select-none"
       style={{ background: '#000' }}
     >
+      {/* Fullscreen tap overlay — shown when control requests fullscreen (browser requires user gesture) */}
+      {fullscreenRequested && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center cursor-pointer"
+          style={{ background: 'rgba(0,0,0,0.75)' }}
+          onClick={() => {
+            setFullscreenRequested(false)
+            const el = containerRef.current
+            if (el && !document.fullscreenElement) void el.requestFullscreen()
+          }}
+        >
+          <div className="text-center pointer-events-none">
+            <Maximize2 size={40} className="text-white mx-auto mb-3 opacity-80" />
+            <p className="text-white text-lg font-medium">Tap to go fullscreen</p>
+          </div>
+        </div>
+      )}
+
       {/* Background video (manual URL) */}
       {bgVideoUrl && (
         <div className="absolute inset-0 pointer-events-none">
