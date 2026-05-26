@@ -147,6 +147,7 @@ export function ProjectorPage() {
     const unsubFullscreen = bus.on('projector.fullscreen', (env) => {
       const el = containerRef.current
       if (!el) return
+      setShowSettings(false)
       if (env.msg.payload.on) {
         void el.requestFullscreen()
       } else if (document.fullscreenElement) {
@@ -232,6 +233,7 @@ export function ProjectorPage() {
   const handleFullscreen = useCallback(() => {
     const el = containerRef.current
     if (!el) return
+    setShowSettings(false)
     if (!document.fullscreenElement) {
       void el.requestFullscreen()
     } else {
