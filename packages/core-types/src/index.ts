@@ -71,6 +71,7 @@ export interface ProjectorWindowConfig {
   opacity: number         // 0..1
   showMedia: boolean      // whether this window plays media cues
   isOpen: boolean         // runtime: whether the OS window is open
+  bgVideoUrl?: string     // optional background video URL
 }
 
 // ─── Subtitle line ───────────────────────────────────────────────────────────

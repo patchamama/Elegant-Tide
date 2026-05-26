@@ -24,10 +24,22 @@ export function SettingsPage() {
     () => (localStorage.getItem('et-theme') ?? 'dark') as 'dark' | 'light',
   )
 
+  const pushSettings = (patch: { locale?: string; theme?: string }) => {
+    const base = config?.backendUrl?.replace(/\/$/, '')
+    if (!base) return
+    void fetch(`${base}/users/settings`, {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    })
+  }
+
   const applyTheme = (next: 'dark' | 'light') => {
     setTheme(next)
     localStorage.setItem('et-theme', next)
     document.documentElement.setAttribute('data-theme', next)
+    pushSettings({ theme: next })
   }
 
   useEffect(() => {
@@ -37,6 +49,7 @@ export function SettingsPage() {
   const updateLocale = async (locale: LangCode) => {
     await appConfigRepo.update({ locale })
     await i18n.changeLanguage(locale)
+    pushSettings({ locale })
   }
 
   const saveBackendUrl = async () => {
@@ -200,7 +213,7 @@ export function SettingsPage() {
           </div>
           <div className="text-sm text-slate-500 space-y-1">
             <p>Elegant Tide — Theater Subtitle Projection System</p>
-            <p>Version 0.1.0 · Offline-first · Powered by Dexie + React 19</p>
+            <p>Version 0.2.0 · Offline-first · Powered by Dexie + React 19</p>
           </div>
         </section>
       </div>

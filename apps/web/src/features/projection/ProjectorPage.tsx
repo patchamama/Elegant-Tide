@@ -42,6 +42,7 @@ export function ProjectorPage() {
   const allLinesRef = useRef<SubtitleLine[]>([])
   const containerRef = useRef<HTMLDivElement>(null)
   const myWindowId = useRef(`projector-${crypto.randomUUID().slice(0, 8)}`)
+  const configRestoredRef = useRef(false)  // track whether we've restored saved config
 
   const { isMaster, canEditSubtitles, canEditComments } = useProjectRole(projectId)
 
@@ -68,6 +69,19 @@ export function ProjectorPage() {
     bus.send({ kind: 'hello', payload: { role: 'projector', windowId: myWindowId.current, userAgent: navigator.userAgent } })
     bus.send({ kind: 'state.request', payload: {} })
     const retryTimer = setTimeout(() => bus.send({ kind: 'state.request', payload: {} }), 600)
+
+    // Restore persisted config only if control hasn't already sent config
+    void db.projects.get(projectId).then((p) => {
+      if (configRestoredRef.current) return  // control already configured us
+      configRestoredRef.current = true
+      const win = p?.projectorWindows?.[0]
+      if (win) {
+        if (win.language) setLanguage(win.language)
+        if (win.style) setStyle(win.style)
+        if (typeof win.showMedia === 'boolean') setShowMedia(win.showMedia)
+        if (win.bgVideoUrl) { setBgVideoUrl(win.bgVideoUrl); setBgVideoInput(win.bgVideoUrl) }
+      }
+    })
 
     void db.lines
       .where('[projectId+order]')
@@ -118,6 +132,7 @@ export function ProjectorPage() {
     const unsubConfig = bus.on('projector.config', (env) => {
       const cfg = env.msg.payload.config
       if (env.from.role === 'control') {
+        configRestoredRef.current = true  // control wins — skip DB restore
         setLanguage(cfg.language)
         setStyle(cfg.style)
         if (typeof cfg.showMedia === 'boolean') setShowMedia(cfg.showMedia)
@@ -195,13 +210,14 @@ export function ProjectorPage() {
   const handleSaveConfig = useCallback(async () => {
     const project = await db.projects.get(projectId)
     if (!project) return
+    const bgPatch = bgVideoUrl ? { bgVideoUrl } : {}
     const windows = project.projectorWindows?.length
-      ? project.projectorWindows.map((w, i) => i === 0 ? { ...w, language, style, showMedia } : w)
-      : [{ id: crypto.randomUUID(), label: 'Projector 1', language, style, opacity: 1, showMedia, isOpen: false }]
+      ? project.projectorWindows.map((w, i) => i === 0 ? { ...w, language, style, showMedia, ...bgPatch } : w)
+      : [{ id: crypto.randomUUID(), label: 'Projector 1', language, style, opacity: 1, showMedia, isOpen: false, ...bgPatch }]
     await projectsRepo.upsert({ ...project, projectorWindows: windows, updatedAt: Date.now() })
     setSavedFeedback(true)
     setTimeout(() => setSavedFeedback(false), 2000)
-  }, [projectId, language, style, showMedia])
+  }, [projectId, language, style, showMedia, bgVideoUrl])
 
   const handleFullscreen = useCallback(() => {
     const el = containerRef.current
