@@ -3,6 +3,7 @@ import { subscribeWithSelector } from 'zustand/middleware'
 import type { SubtitleProject, LangCode } from '@elegant-tide/core-types'
 import { DEFAULT_PROJECTION_STYLE } from '@elegant-tide/core-types'
 import { projectsRepo } from '@elegant-tide/db'
+import { enqueueProjectUpsert, enqueueProjectDelete } from '@elegant-tide/sync'
 
 interface ProjectStore {
   currentProject: SubtitleProject | null
@@ -41,6 +42,7 @@ export const useProjectStore = create<ProjectStore>()(
     createProject: async (name, primaryLang = 'en') => {
       const project = makeProject(name, primaryLang)
       await projectsRepo.upsert(project)
+      void enqueueProjectUpsert(project)
       return project
     },
 
@@ -49,6 +51,7 @@ export const useProjectStore = create<ProjectStore>()(
       if (!existing) return
       const updated: SubtitleProject = { ...existing, ...patch, updatedAt: Date.now() }
       await projectsRepo.upsert(updated)
+      void enqueueProjectUpsert(updated)
       if (get().currentProject?.id === updated.id) {
         set({ currentProject: updated })
       }
@@ -56,6 +59,7 @@ export const useProjectStore = create<ProjectStore>()(
 
     deleteProject: async (id) => {
       await projectsRepo.softDelete(id)
+      void enqueueProjectDelete(id)
       if (get().currentProject?.id === id) {
         set({ currentProject: null })
       }

@@ -65,7 +65,6 @@ export async function flushOutbox(config: SyncConfig): Promise<void> {
       if (res.ok) {
         const { results } = await res.json() as { results: Array<{ id: string; version: number; conflict: boolean }> }
 
-        // Update local version numbers for non-conflicting writes; record conflicts otherwise
         for (const r of results) {
           const local = await linesRepo.get(r.id)
           if (!local) continue
@@ -73,18 +72,15 @@ export async function flushOutbox(config: SyncConfig): Promise<void> {
             await conflictsRepo.record(local)
           } else {
             await linesRepo.upsert({ ...local, version: r.version })
-            // If this line had a stale conflict record, clear it
             await conflictsRepo.clear(r.id)
           }
         }
 
-        // Remove flushed entries from outbox
         const flushedIds = entries
           .filter((e) => e.op.kind === 'line.upsert')
           .map((e) => e.id)
         await db.outbox.bulkDelete(flushedIds)
 
-        // Bump connectivity
         await db.connectivity.put({
           id: 1,
           lastServerSuccessAt: Date.now(),
@@ -92,10 +88,8 @@ export async function flushOutbox(config: SyncConfig): Promise<void> {
           graceWindowMs: 7 * 24 * 3600 * 1000,
         })
       } else if (res.status === 401) {
-        // Not authenticated — stop trying
         return
       } else {
-        // Server error — increment attempt counts
         for (const entry of entries) {
           await db.outbox.update(entry.id, {
             attempts: entry.attempts + 1,
@@ -103,6 +97,72 @@ export async function flushOutbox(config: SyncConfig): Promise<void> {
             lastError: `HTTP ${res.status}`,
           })
         }
+      }
+    } catch {
+      // Network error — will retry on next flush
+    }
+  }
+
+  // ─── project.upsert ──────────────────────────────────────────────────────────
+
+  const projectUpserts = entries.filter((e) => e.op.kind === 'project.upsert')
+
+  for (const entry of projectUpserts) {
+    const project = (entry.op as Extract<typeof entry.op, { kind: 'project.upsert' }>).project
+    try {
+      const res = await apiFetch(config.backendUrl, `/projects/${project.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          name: project.name,
+          description: project.description,
+          languages: project.languages,
+          primaryLanguage: project.primaryLanguage,
+          defaultStyle: project.defaultStyle,
+          projectorWindows: project.projectorWindows,
+        }),
+      })
+
+      if (res.ok) {
+        await db.outbox.delete(entry.id)
+        await db.connectivity.put({
+          id: 1,
+          lastServerSuccessAt: Date.now(),
+          backendConfigured: true,
+          graceWindowMs: 7 * 24 * 3600 * 1000,
+        })
+      } else if (res.status === 401) {
+        return
+      } else {
+        await db.outbox.update(entry.id, {
+          attempts: entry.attempts + 1,
+          lastAttemptAt: Date.now(),
+          lastError: `HTTP ${res.status}`,
+        })
+      }
+    } catch {
+      // Network error — will retry on next flush
+    }
+  }
+
+  // ─── project.delete ──────────────────────────────────────────────────────────
+
+  const projectDeletes = entries.filter((e) => e.op.kind === 'project.delete')
+
+  for (const entry of projectDeletes) {
+    const { projectId } = entry.op as Extract<typeof entry.op, { kind: 'project.delete' }>
+    try {
+      const res = await apiFetch(config.backendUrl, `/projects/${projectId}`, { method: 'DELETE' })
+
+      if (res.ok || res.status === 404) {
+        await db.outbox.delete(entry.id)
+      } else if (res.status === 401) {
+        return
+      } else {
+        await db.outbox.update(entry.id, {
+          attempts: entry.attempts + 1,
+          lastAttemptAt: Date.now(),
+          lastError: `HTTP ${res.status}`,
+        })
       }
     } catch {
       // Network error — will retry on next flush
