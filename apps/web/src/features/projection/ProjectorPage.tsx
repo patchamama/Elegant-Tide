@@ -144,9 +144,19 @@ export function ProjectorPage() {
       setCurrentLine((cur) => (cur?.id === updated.id ? updated : cur))
     })
 
+    const unsubFullscreen = bus.on('projector.fullscreen', (env) => {
+      const el = containerRef.current
+      if (!el) return
+      if (env.msg.payload.on) {
+        void el.requestFullscreen()
+      } else if (document.fullscreenElement) {
+        void document.exitFullscreen()
+      }
+    })
+
     return () => {
       clearTimeout(retryTimer)
-      unsubGoto(); unsubBlackout(); unsubSnapshot(); unsubConfig(); unsubLineUpdated()
+      unsubGoto(); unsubBlackout(); unsubSnapshot(); unsubConfig(); unsubLineUpdated(); unsubFullscreen()
       bus.close()
       busRef.current = null
     }

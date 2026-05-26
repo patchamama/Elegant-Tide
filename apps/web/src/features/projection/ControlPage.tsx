@@ -61,6 +61,7 @@ export function ControlPage() {
   const [rightPanel, setRightPanel] = useState<'preview' | 'windows'>('preview')
   const [broadcastEnabled, setBroadcastEnabled] = useState(true)
   const prevBroadcastRef = useRef(true)
+  const [allFullscreen, setAllFullscreen] = useState(false)
   const [windowConfigs, setWindowConfigs] = useState<ProjectorWindowConfig[]>([])
   const [editingWindowId, setEditingWindowId] = useState<string | null>(null)
   const [audioPlaying, setAudioPlaying] = useState(false)
@@ -537,8 +538,8 @@ export function ControlPage() {
                 )
               })()}
 
-              {/* Broadcast toggle */}
-              <div className="px-4 py-2 border-t border-slate-800 flex items-center justify-between">
+              {/* Broadcast + fullscreen toggles */}
+              <div className="px-4 py-2 border-t border-slate-800 flex items-center justify-between gap-3">
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input
                     type="checkbox"
@@ -548,10 +549,24 @@ export function ControlPage() {
                   />
                   <span className="text-xs text-slate-300">Show on projectors</span>
                 </label>
-                {!broadcastEnabled && (
-                  <span className="text-xs text-amber-400 font-medium">Preview only</span>
-                )}
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={allFullscreen}
+                    onChange={(e) => {
+                      setAllFullscreen(e.target.checked)
+                      busRef.current?.send({ kind: 'projector.fullscreen', payload: { on: e.target.checked } })
+                    }}
+                    className="accent-brand-500"
+                  />
+                  <span className="text-xs text-slate-300">All fullscreen</span>
+                </label>
               </div>
+              {!broadcastEnabled && (
+                <div className="px-4 pb-2 -mt-1">
+                  <span className="text-xs text-amber-400 font-medium">Preview only</span>
+                </div>
+              )}
 
               {/* Progress bar */}
               {visibleLines.length > 0 && (

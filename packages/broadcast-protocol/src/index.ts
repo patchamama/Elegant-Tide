@@ -19,6 +19,7 @@ export type BroadcastMessage =
   // Projector config (control → specific projector via `to`)
   | { kind: 'projector.config'; payload: { config: ProjectorWindowConfig } }
   | { kind: 'projector.close'; payload: { windowId: string } }
+  | { kind: 'projector.fullscreen'; payload: { on: boolean } }
 
   // Media control
   | { kind: 'media.play'; payload: { lineId: string } }
