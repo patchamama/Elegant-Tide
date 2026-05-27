@@ -195,7 +195,12 @@ export function LineRow({
         rowBg,
         isEditing && 'ring-1 ring-inset ring-brand-600/30 z-10 relative',
       )}
-      onClick={() => selectLine(line.id, false)}
+      onClick={(e) => {
+        if (onLineActivate && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
+          onLineActivate(line.id)
+        }
+        selectLine(line.id, false)
+      }}
     >
       {/* Drag handle */}
       <div
