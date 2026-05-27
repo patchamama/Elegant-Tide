@@ -10,6 +10,7 @@ import type { LangCode, ProjectionChannel, ProjectorWindowConfig, ProjectionStyl
 import { DEFAULT_PROJECTION_STYLE } from '@elegant-tide/core-types'
 import { openProjectorWindow as platformOpenProjector, isCapacitor } from '@/lib/platform'
 import { saveCurrentLineId, loadCurrentLineId } from '@/lib/projectionStorage'
+import { renderMarkdown } from '@/lib/renderMarkdown'
 import { useLiveSync } from '@/hooks/useLiveSync'
 import { useAudioPreloader } from '@/hooks/useAudioPreloader'
 import { LineList } from '@/features/editor/LineList'
@@ -464,7 +465,7 @@ export function ControlPage() {
             languages={project.languages as LangCode[]}
             primaryLang={primaryLang}
             projectId={projectId}
-            canEditSubtitles={false}
+            canEditSubtitles={true}
             canEditComments={false}
             showNotes={showNotes}
             searchQuery={searchQuery}
@@ -508,7 +509,7 @@ export function ControlPage() {
                       backgroundColor: 'transparent',
                     }}
                   >
-                    {previewText}
+                    {renderMarkdown(previewText)}
                   </div>
                 ) : (
                   <p className="text-slate-700 text-xs italic">No line active</p>

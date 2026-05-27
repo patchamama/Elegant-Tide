@@ -7,6 +7,7 @@ import { linesRepo, db, projectsRepo } from '@elegant-tide/db'
 import ReactPlayer from 'react-player'
 import { Settings, X, FileDown, Save, Check, Maximize2, Edit3, ArrowUp, ArrowDown, ArrowLeft, ArrowRight } from 'lucide-react'
 import { saveCurrentLineId, loadCurrentLineId } from '@/lib/projectionStorage'
+import { renderMarkdown } from '@/lib/renderMarkdown'
 import { exportPdf, type PdfPageSize } from '@/lib/exportPdf'
 import { useProjectRole } from '@/hooks/useProjectRole'
 import { LineList } from '@/features/editor/LineList'
@@ -256,28 +257,6 @@ export function ProjectorPage() {
     }
   }, [])
 
-  // Render inline markdown: _italic_, *italic*, **bold**, __bold__ (cross-line)
-  const renderMarkdown = (raw: string): React.ReactNode => {
-    const TOKEN = /(\*\*[\s\S]+?\*\*|__[\s\S]+?__|_[\s\S]+?_|\*[\s\S]+?\*)/
-    const parts = raw.split(TOKEN)
-    return parts.flatMap((part, i) => {
-      let content: string
-      let Wrapper: 'strong' | 'em' | null = null
-      const boldDouble = /^\*\*([\s\S]+)\*\*$/.exec(part)
-      const boldUnder  = /^__([\s\S]+)__$/.exec(part)
-      const emUnder    = /^_([\s\S]+)_$/.exec(part)
-      const emStar     = /^\*([\s\S]+)\*$/.exec(part)
-      if (boldDouble)      { content = boldDouble[1]!; Wrapper = 'strong' }
-      else if (boldUnder)  { content = boldUnder[1]!;  Wrapper = 'strong' }
-      else if (emUnder)    { content = emUnder[1]!;    Wrapper = 'em' }
-      else if (emStar)     { content = emStar[1]!;     Wrapper = 'em' }
-      else                 { content = part;            Wrapper = null }
-
-      const lines = content.split('\n')
-      const nodes = lines.flatMap((line, li) => li < lines.length - 1 ? [line, <br key={`${i}-${li}`} />] : [line])
-      return Wrapper ? [<Wrapper key={i}>{nodes}</Wrapper>] : nodes
-    })
-  }
 
   const text = (!blackout && currentLine?.type !== 'media')
     ? language === 'comment'

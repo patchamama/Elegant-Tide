@@ -142,6 +142,12 @@ export function LineRow({
   const [splitMode, setSplitMode] = useState<{ lang: LangCode; pos: number } | null>(null)
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
   const [isEditing, setIsEditing] = useState(false)
+  // null = not editing; 'ready' = pencil clicked, click a cell to open; lang = that cell is open
+  const [editingCell, setEditingCell] = useState<string | null>(null)
+
+  const handleProjectionEdit = useCallback(() => {
+    setEditingCell('ready')
+  }, [])
 
   // Type picker dropdown
   const [showTypePicker, setShowTypePicker] = useState(false)
@@ -315,6 +321,10 @@ export function LineRow({
               onFocusChange={(f) => setIsEditing(f)}
               onActivate={onLineActivate ? () => onLineActivate(line.id) : undefined}
               isCurrentProjection={isCurrentProjection}
+              projectionEditReady={editingCell !== null}
+              isEditingCell={editingCell === lang}
+              onCellEditOpen={() => setEditingCell(lang)}
+              onCellEditClose={() => setEditingCell(null)}
             />
           ))
         )}
@@ -322,7 +332,12 @@ export function LineRow({
 
       {/* Action buttons */}
       <div className="flex-shrink-0 flex items-center gap-0.5 pt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        {line.type === 'subtitle' && !splitMode && (
+        {onLineActivate && canEditSubtitles && (
+          editingCell !== null
+            ? <ActionBtn icon={X} title="Done editing" onClick={(e) => { e.stopPropagation(); setEditingCell(null) }} className="text-slate-400 hover:text-white" />
+            : <ActionBtn icon={Pencil} title="Edit this line" onClick={(e) => { e.stopPropagation(); handleProjectionEdit() }} className="text-brand-400 hover:text-brand-300" />
+        )}
+        {line.type === 'subtitle' && !splitMode && !onLineActivate && (
           <ActionBtn
             icon={Scissors}
             title="Split at cursor (click in text first)"
@@ -377,6 +392,10 @@ interface SubtitleCellProps {
   onFocusChange?: (focused: boolean) => void
   onActivate?: (() => void) | undefined
   isCurrentProjection?: boolean
+  projectionEditReady?: boolean  // pencil clicked — cells are clickable to open editor
+  isEditingCell?: boolean        // this specific cell is open for editing
+  onCellEditOpen?: () => void
+  onCellEditClose?: () => void
 }
 
 function SubtitleCell({
@@ -395,6 +414,10 @@ function SubtitleCell({
   onFocusChange,
   onActivate,
   isCurrentProjection = false,
+  projectionEditReady = false,
+  isEditingCell = false,
+  onCellEditOpen,
+  onCellEditClose,
 }: SubtitleCellProps) {
   const [suggesting, setSuggesting] = useState(false)
   const [focused, setFocused] = useState(false)
@@ -477,57 +500,60 @@ function SubtitleCell({
   }
 
   const internalRef = useRef<HTMLTextAreaElement | null>(null)
-  const [editingInProjection, setEditingInProjection] = useState(false)
   const isProjectionMode = !!onActivate
-  const effectiveReadOnly = !canEdit || (isProjectionMode && !editingInProjection)
 
   return (
     <div className={clsx(
       'flex-1 min-w-0 relative group/cell px-1 rounded transition-colors',
       focused ? 'bg-slate-800/70 ring-1 ring-brand-600/50' : hasMatch ? 'bg-yellow-900/15' : isSelectedColumn ? 'bg-brand-950/25' : '',
     )}>
-      <textarea
-        ref={(el) => { internalRef.current = el; if (typeof textareaRef === 'function') textareaRef(el) }}
-        value={text}
-        onChange={(e) => { setLocalText(e.target.value); onTextChange(e.target.value) }}
-        onFocus={() => { setFocused(true); onFocusChange?.(true) }}
-        onBlur={() => { setFocused(false); onFocusChange?.(false); if (isProjectionMode) setEditingInProjection(false) }}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape' && splitMode) onCancelSplit()
-          if (e.key === 'Enter' && splitMode?.lang === lang) {
-            e.preventDefault()
-            onConfirmSplit()
-          }
-        }}
-        rows={focused ? 4 : 2}
-        placeholder={`[${lang.toUpperCase()}]`}
-        readOnly={effectiveReadOnly}
-        className={clsx(
-          'w-full bg-transparent text-sm resize-none outline-none placeholder-slate-700 rounded px-1 py-0.5 transition-colors',
-          canEdit && !effectiveReadOnly ? 'text-slate-100' : 'text-slate-500 cursor-default',
-          isProjectionMode && !editingInProjection && 'cursor-pointer',
-        )}
-        onClick={(e) => {
-          e.stopPropagation()
-          if (isProjectionMode && !editingInProjection) {
-            if (isCurrentProjection) return  // do nothing — use pencil button to edit
-            onActivate?.()
-          }
-        }}
-      />
-      {/* Pencil button — projection mode only, shown on hover of active line */}
-      {isProjectionMode && isCurrentProjection && canEdit && !editingInProjection && (
-        <button
+      {isProjectionMode && !isEditingCell ? (
+        /* Projection view: plain text */
+        <div
+          className={clsx(
+            'w-full text-sm px-1 py-0.5 min-h-[2.5rem] whitespace-pre-wrap break-words',
+            projectionEditReady && canEdit ? 'cursor-pointer text-slate-200 hover:bg-slate-700/30 rounded' : 'cursor-default text-slate-300',
+          )}
           onClick={(e) => {
             e.stopPropagation()
-            setEditingInProjection(true)
-            requestAnimationFrame(() => { internalRef.current?.focus() })
+            if (projectionEditReady && canEdit) {
+              onCellEditOpen?.()
+              requestAnimationFrame(() => internalRef.current?.focus())
+            } else if (!isCurrentProjection) {
+              onActivate?.()
+            }
           }}
-          title="Edit this line"
-          className="absolute top-0.5 right-0.5 p-0.5 rounded text-slate-600 hover:text-brand-400 hover:bg-slate-700/60 transition-colors opacity-0 group-hover/cell:opacity-100"
+          onContextMenu={(e) => {
+            if (!canEdit) return
+            e.preventDefault()
+            e.stopPropagation()
+            if (!isCurrentProjection) onActivate?.()
+            onCellEditOpen?.()
+            requestAnimationFrame(() => internalRef.current?.focus())
+          }}
         >
-          <Pencil size={10} />
-        </button>
+          {text || <span className="text-slate-700 italic">[{lang.toUpperCase()}]</span>}
+        </div>
+      ) : (
+        <textarea
+          ref={(el) => { internalRef.current = el; if (typeof textareaRef === 'function') textareaRef(el) }}
+          value={text}
+          onChange={(e) => { setLocalText(e.target.value); onTextChange(e.target.value) }}
+          onFocus={() => { setFocused(true); onFocusChange?.(true) }}
+          onBlur={() => { setFocused(false); onFocusChange?.(false); if (isProjectionMode) onCellEditClose?.() }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') { if (splitMode) onCancelSplit(); if (isProjectionMode) onCellEditClose?.() }
+            if (e.key === 'Enter' && splitMode?.lang === lang) { e.preventDefault(); onConfirmSplit() }
+          }}
+          rows={focused ? 4 : 2}
+          placeholder={`[${lang.toUpperCase()}]`}
+          readOnly={!canEdit}
+          className={clsx(
+            'w-full bg-transparent text-sm resize-none outline-none placeholder-slate-700 rounded px-1 py-0.5 transition-colors',
+            canEdit ? 'text-slate-100' : 'text-slate-500 cursor-default',
+          )}
+          onClick={(e) => e.stopPropagation()}
+        />
       )}
 
       {lang !== primaryLang && !text && (
