@@ -24,6 +24,7 @@ import {
   Loader2,
   Square,
   Bookmark,
+  Pencil,
   Volume2,
   Lightbulb,
   ChevronDown,
@@ -475,17 +476,22 @@ function SubtitleCell({
     )
   }
 
+  const internalRef = useRef<HTMLTextAreaElement | null>(null)
+  const [editingInProjection, setEditingInProjection] = useState(false)
+  const isProjectionMode = !!onActivate
+  const effectiveReadOnly = !canEdit || (isProjectionMode && !editingInProjection)
+
   return (
     <div className={clsx(
       'flex-1 min-w-0 relative group/cell px-1 rounded transition-colors',
       focused ? 'bg-slate-800/70 ring-1 ring-brand-600/50' : hasMatch ? 'bg-yellow-900/15' : isSelectedColumn ? 'bg-brand-950/25' : '',
     )}>
       <textarea
-        ref={textareaRef}
+        ref={(el) => { internalRef.current = el; if (typeof textareaRef === 'function') textareaRef(el) }}
         value={text}
         onChange={(e) => { setLocalText(e.target.value); onTextChange(e.target.value) }}
         onFocus={() => { setFocused(true); onFocusChange?.(true) }}
-        onBlur={() => { setFocused(false); onFocusChange?.(false) }}
+        onBlur={() => { setFocused(false); onFocusChange?.(false); if (isProjectionMode) setEditingInProjection(false) }}
         onKeyDown={(e) => {
           if (e.key === 'Escape' && splitMode) onCancelSplit()
           if (e.key === 'Enter' && splitMode?.lang === lang) {
@@ -495,16 +501,35 @@ function SubtitleCell({
         }}
         rows={focused ? 4 : 2}
         placeholder={`[${lang.toUpperCase()}]`}
-        readOnly={!canEdit}
+        readOnly={effectiveReadOnly}
         className={clsx(
           'w-full bg-transparent text-sm resize-none outline-none placeholder-slate-700 rounded px-1 py-0.5 transition-colors',
-          canEdit ? 'text-slate-100' : 'text-slate-500 cursor-default',
+          canEdit && !effectiveReadOnly ? 'text-slate-100' : 'text-slate-500 cursor-default',
+          isProjectionMode && !editingInProjection && 'cursor-pointer',
         )}
         onClick={(e) => {
           e.stopPropagation()
-          if (onActivate && !isCurrentProjection) onActivate()
+          if (isProjectionMode && !editingInProjection) {
+            if (isCurrentProjection) return  // do nothing — use pencil button to edit
+            onActivate?.()
+          }
         }}
       />
+      {/* Pencil button — projection mode only, shown on hover of active line */}
+      {isProjectionMode && isCurrentProjection && canEdit && !editingInProjection && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            setEditingInProjection(true)
+            requestAnimationFrame(() => { internalRef.current?.focus() })
+          }}
+          title="Edit this line"
+          className="absolute top-0.5 right-0.5 p-0.5 rounded text-slate-600 hover:text-brand-400 hover:bg-slate-700/60 transition-colors opacity-0 group-hover/cell:opacity-100"
+        >
+          <Pencil size={10} />
+        </button>
+      )}
+
       {lang !== primaryLang && !text && (
         <button
           onClick={(e) => { e.stopPropagation(); void handleSuggest() }}
