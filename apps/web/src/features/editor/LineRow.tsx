@@ -195,10 +195,8 @@ export function LineRow({
         rowBg,
         isEditing && 'ring-1 ring-inset ring-brand-600/30 z-10 relative',
       )}
-      onClick={(e) => {
-        if (onLineActivate && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
-          onLineActivate(line.id)
-        }
+      onClick={() => {
+        if (onLineActivate) onLineActivate(line.id)
         selectLine(line.id, false)
       }}
     >
@@ -314,6 +312,8 @@ export function LineRow({
               selectedColumn={selectedColumn}
               canEdit={canEditSubtitles}
               onFocusChange={(f) => setIsEditing(f)}
+              onActivate={onLineActivate ? () => onLineActivate(line.id) : undefined}
+              isCurrentProjection={isCurrentProjection}
             />
           ))
         )}
@@ -374,6 +374,8 @@ interface SubtitleCellProps {
   selectedColumn?: string | null
   canEdit?: boolean
   onFocusChange?: (focused: boolean) => void
+  onActivate?: (() => void) | undefined
+  isCurrentProjection?: boolean
 }
 
 function SubtitleCell({
@@ -390,6 +392,8 @@ function SubtitleCell({
   selectedColumn = null,
   canEdit = true,
   onFocusChange,
+  onActivate,
+  isCurrentProjection = false,
 }: SubtitleCellProps) {
   const [suggesting, setSuggesting] = useState(false)
   const [focused, setFocused] = useState(false)
@@ -496,7 +500,10 @@ function SubtitleCell({
           'w-full bg-transparent text-sm resize-none outline-none placeholder-slate-700 rounded px-1 py-0.5 transition-colors',
           canEdit ? 'text-slate-100' : 'text-slate-500 cursor-default',
         )}
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation()
+          if (onActivate && !isCurrentProjection) onActivate()
+        }}
       />
       {lang !== primaryLang && !text && (
         <button
