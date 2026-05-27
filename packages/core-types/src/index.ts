@@ -35,6 +35,8 @@ export interface ProjectionStyle {
   verticalAlign: 'top' | 'center' | 'bottom'
   lineHeight: number      // unitless multiplier
   borderRadiusPx?: number
+  offsetX?: number        // horizontal fine-tune offset in px (negative = left)
+  offsetY?: number        // vertical fine-tune offset in px (negative = up)
 }
 
 export const DEFAULT_PROJECTION_STYLE: ProjectionStyle = {

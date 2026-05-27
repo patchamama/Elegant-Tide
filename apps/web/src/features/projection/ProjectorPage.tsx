@@ -5,7 +5,7 @@ import type { SubtitleLine, LangCode, ProjectionChannel, ProjectionStyle, MediaP
 import { DEFAULT_PROJECTION_STYLE } from '@elegant-tide/core-types'
 import { linesRepo, db, projectsRepo } from '@elegant-tide/db'
 import ReactPlayer from 'react-player'
-import { Settings, X, FileDown, Save, Check, Maximize2, Edit3 } from 'lucide-react'
+import { Settings, X, FileDown, Save, Check, Maximize2, Edit3, ArrowUp, ArrowDown, ArrowLeft, ArrowRight } from 'lucide-react'
 import { saveCurrentLineId, loadCurrentLineId } from '@/lib/projectionStorage'
 import { exportPdf, type PdfPageSize } from '@/lib/exportPdf'
 import { useProjectRole } from '@/hooks/useProjectRole'
@@ -315,10 +315,10 @@ export function ProjectorPage() {
           className="absolute inset-x-0 flex justify-center px-8"
           style={
             (style.verticalAlign ?? 'center') === 'top'
-              ? { top: '2rem' }
+              ? { top: `calc(2rem + ${style.offsetY ?? 0}px)`, marginLeft: `${style.offsetX ?? 0}px` }
               : (style.verticalAlign ?? 'center') === 'bottom'
-              ? { bottom: '3rem' }
-              : { top: '50%', transform: 'translateY(-50%)' }
+              ? { bottom: `calc(3rem - ${style.offsetY ?? 0}px)`, marginLeft: `${style.offsetX ?? 0}px` }
+              : { top: '50%', transform: `translateY(calc(-50% + ${style.offsetY ?? 0}px))`, marginLeft: `${style.offsetX ?? 0}px` }
           }
         >
           <div
@@ -428,9 +428,31 @@ export function ProjectorPage() {
             </label>
           </div>
 
-          {/* Horizontal align */}
+          {/* Horizontal align + fine offset */}
           <div>
-            <span className="text-slate-400 text-xs block mb-1">Horizontal</span>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-slate-400 text-xs">Horizontal</span>
+              <div className="flex items-center gap-0.5">
+                <button
+                  onClick={() => setStyle((s) => ({ ...s, offsetX: (s.offsetX ?? 0) - 1 }))}
+                  className="p-0.5 rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                  title="Nudge left 1px"
+                ><ArrowLeft size={11} /></button>
+                <span className="text-xs text-slate-500 tabular-nums w-8 text-center">{style.offsetX ?? 0}px</span>
+                <button
+                  onClick={() => setStyle((s) => ({ ...s, offsetX: (s.offsetX ?? 0) + 1 }))}
+                  className="p-0.5 rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                  title="Nudge right 1px"
+                ><ArrowRight size={11} /></button>
+                {(style.offsetX ?? 0) !== 0 && (
+                  <button
+                    onClick={() => setStyle((s) => ({ ...s, offsetX: 0 }))}
+                    className="ml-0.5 text-xs text-slate-600 hover:text-slate-300 transition-colors"
+                    title="Reset"
+                  >↺</button>
+                )}
+              </div>
+            </div>
             <div className="flex gap-1">
               {(['left', 'center', 'right'] as const).map((a) => (
                 <button key={a}
@@ -441,9 +463,31 @@ export function ProjectorPage() {
             </div>
           </div>
 
-          {/* Vertical align */}
+          {/* Vertical align + fine offset */}
           <div>
-            <span className="text-slate-400 text-xs block mb-1">Vertical</span>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-slate-400 text-xs">Vertical</span>
+              <div className="flex items-center gap-0.5">
+                <button
+                  onClick={() => setStyle((s) => ({ ...s, offsetY: (s.offsetY ?? 0) - 1 }))}
+                  className="p-0.5 rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                  title="Nudge up 1px"
+                ><ArrowUp size={11} /></button>
+                <span className="text-xs text-slate-500 tabular-nums w-8 text-center">{style.offsetY ?? 0}px</span>
+                <button
+                  onClick={() => setStyle((s) => ({ ...s, offsetY: (s.offsetY ?? 0) + 1 }))}
+                  className="p-0.5 rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                  title="Nudge down 1px"
+                ><ArrowDown size={11} /></button>
+                {(style.offsetY ?? 0) !== 0 && (
+                  <button
+                    onClick={() => setStyle((s) => ({ ...s, offsetY: 0 }))}
+                    className="ml-0.5 text-xs text-slate-600 hover:text-slate-300 transition-colors"
+                    title="Reset"
+                  >↺</button>
+                )}
+              </div>
+            </div>
             <div className="flex gap-1">
               {(['top', 'center', 'bottom'] as const).map((a) => (
                 <button key={a}
