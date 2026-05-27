@@ -44,6 +44,7 @@ export function ProjectorPage() {
   const containerRef = useRef<HTMLDivElement>(null)
   const myWindowId = useRef(`projector-${crypto.randomUUID().slice(0, 8)}`)
   const configRestoredRef = useRef(false)  // track whether we've restored saved config
+  const languageLockedRef = useRef(false)   // true once language is explicitly set by control or user
 
   const { isMaster, canEditSubtitles, canEditComments } = useProjectRole(projectId)
 
@@ -77,7 +78,7 @@ export function ProjectorPage() {
       configRestoredRef.current = true
       const win = p?.projectorWindows?.[0]
       if (win) {
-        if (win.language) setLanguage(win.language)
+        if (win.language) { languageLockedRef.current = true; setLanguage(win.language) }
         if (win.style) setStyle(win.style)
         if (typeof win.showMedia === 'boolean') setShowMedia(win.showMedia)
         if (win.bgVideoUrl) { setBgVideoUrl(win.bgVideoUrl); setBgVideoInput(win.bgVideoUrl) }
@@ -107,11 +108,13 @@ export function ProjectorPage() {
       if (line) {
         setCurrentLine(line)
         goTo(line.id)
-        setLanguage((lang) => {
-          if (lang !== 'comment' && line.translations[lang as LangCode]?.trim()) return lang
-          const found = Object.entries(line.translations).find(([, v]) => v?.trim())
-          return found ? (found[0] as LangCode) : lang
-        })
+        if (!languageLockedRef.current) {
+          setLanguage((lang) => {
+            if (lang !== 'comment' && line.translations[lang as LangCode]?.trim()) return lang
+            const found = Object.entries(line.translations).find(([, v]) => v?.trim())
+            return found ? (found[0] as LangCode) : lang
+          })
+        }
       } else {
         setCurrentLine(null)
       }
@@ -134,6 +137,7 @@ export function ProjectorPage() {
       const cfg = env.msg.payload.config
       if (env.from.role === 'control') {
         configRestoredRef.current = true  // control wins — skip DB restore
+        languageLockedRef.current = true  // explicit config from control — lock language
         setLanguage(cfg.language)
         setStyle(cfg.style)
         if (typeof cfg.showMedia === 'boolean') setShowMedia(cfg.showMedia)
@@ -243,6 +247,24 @@ export function ProjectorPage() {
     }
   }, [])
 
+  // Render inline markdown: _italic_, *italic*, **bold**, __bold__ (cross-line)
+  const renderMarkdown = (raw: string): React.ReactNode => {
+    const parts = raw.split(/(\*\*[\s\S]+?\*\*|__[\s\S]+?__|_[\s\S]+?_|\*[\s\S]+?\*)/)
+    return parts.flatMap((part, i) => {
+      let content: string
+      let Wrapper: 'strong' | 'em' | null = null
+      if (part.startsWith('**') && part.endsWith('**')) { content = part.slice(2, -2); Wrapper = 'strong' }
+      else if (part.startsWith('__') && part.endsWith('__')) { content = part.slice(2, -2); Wrapper = 'strong' }
+      else if ((part.startsWith('_') && part.endsWith('_')) || (part.startsWith('*') && part.endsWith('*'))) { content = part.slice(1, -1); Wrapper = 'em' }
+      else { content = part; Wrapper = null }
+
+      // Preserve newlines within each segment
+      const lines = content.split('\n')
+      const nodes = lines.flatMap((line, li) => li < lines.length - 1 ? [line, <br key={`${i}-${li}`} />] : [line])
+      return Wrapper ? [<Wrapper key={i}>{nodes}</Wrapper>] : nodes
+    })
+  }
+
   const text = (!blackout && currentLine?.type !== 'media')
     ? language === 'comment'
       ? (currentLine?.comment ?? '')
@@ -334,11 +356,10 @@ export function ProjectorPage() {
               lineHeight: style.lineHeight,
               borderRadius: `${style.borderRadiusPx ?? 4}px`,
               maxWidth: '90vw',
-              whiteSpace: 'pre-wrap',
             }}
             data-testid="projector-text"
           >
-            {text}
+            {renderMarkdown(text)}
           </div>
         </div>
       )}
@@ -385,7 +406,7 @@ export function ProjectorPage() {
             <span className="text-slate-400 text-xs block mb-1">Language</span>
             <select
               value={language}
-              onChange={(e) => setLanguage(e.target.value as ProjectionChannel)}
+              onChange={(e) => { languageLockedRef.current = true; setLanguage(e.target.value as ProjectionChannel) }}
               className="w-full bg-white/10 border border-white/10 rounded-lg px-2 py-1.5 text-sm outline-none"
             >
               <option value="comment" className="bg-slate-900">Comments</option>
