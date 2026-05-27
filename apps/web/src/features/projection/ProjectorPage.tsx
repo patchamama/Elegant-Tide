@@ -258,16 +258,21 @@ export function ProjectorPage() {
 
   // Render inline markdown: _italic_, *italic*, **bold**, __bold__ (cross-line)
   const renderMarkdown = (raw: string): React.ReactNode => {
-    const parts = raw.split(/(\*\*[\s\S]+?\*\*|__[\s\S]+?__|_[\s\S]+?_|\*[\s\S]+?\*)/)
+    const TOKEN = /(\*\*[\s\S]+?\*\*|__[\s\S]+?__|_[\s\S]+?_|\*[\s\S]+?\*)/
+    const parts = raw.split(TOKEN)
     return parts.flatMap((part, i) => {
       let content: string
       let Wrapper: 'strong' | 'em' | null = null
-      if (part.startsWith('**') && part.endsWith('**')) { content = part.slice(2, -2); Wrapper = 'strong' }
-      else if (part.startsWith('__') && part.endsWith('__')) { content = part.slice(2, -2); Wrapper = 'strong' }
-      else if ((part.startsWith('_') && part.endsWith('_')) || (part.startsWith('*') && part.endsWith('*'))) { content = part.slice(1, -1); Wrapper = 'em' }
-      else { content = part; Wrapper = null }
+      const boldDouble = /^\*\*([\s\S]+)\*\*$/.exec(part)
+      const boldUnder  = /^__([\s\S]+)__$/.exec(part)
+      const emUnder    = /^_([\s\S]+)_$/.exec(part)
+      const emStar     = /^\*([\s\S]+)\*$/.exec(part)
+      if (boldDouble)      { content = boldDouble[1]!; Wrapper = 'strong' }
+      else if (boldUnder)  { content = boldUnder[1]!;  Wrapper = 'strong' }
+      else if (emUnder)    { content = emUnder[1]!;    Wrapper = 'em' }
+      else if (emStar)     { content = emStar[1]!;     Wrapper = 'em' }
+      else                 { content = part;            Wrapper = null }
 
-      // Preserve newlines within each segment
       const lines = content.split('\n')
       const nodes = lines.flatMap((line, li) => li < lines.length - 1 ? [line, <br key={`${i}-${li}`} />] : [line])
       return Wrapper ? [<Wrapper key={i}>{nodes}</Wrapper>] : nodes
