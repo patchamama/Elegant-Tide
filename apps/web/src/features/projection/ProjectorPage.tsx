@@ -169,6 +169,15 @@ export function ProjectorPage() {
     }
   }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const handleLineActivate = useCallback(async (lineId: string) => {
+    const line = await linesRepo.get(lineId)
+    if (!line) return
+    setCurrentLine(line)
+    goTo(line.id)
+    saveCurrentLineId(projectId, line.id)
+    busRef.current?.send({ kind: 'cue.goto', payload: { lineId: line.id } })
+  }, [projectId, goTo])
+
   const navigateProjector = useCallback((dir: 1 | -1) => {
     const ls = allLinesRef.current
     if (ls.length === 0) return
@@ -383,6 +392,7 @@ export function ProjectorPage() {
               canEditComments={canEditComments}
               followLineId={currentLine?.id ?? null}
               isFollowing={true}
+              onLineActivate={handleLineActivate}
             />
           </div>
         </div>
