@@ -15,8 +15,8 @@ import { useLiveSync } from '@/hooks/useLiveSync'
 import { useAudioPreloader } from '@/hooks/useAudioPreloader'
 import { LineList } from '@/features/editor/LineList'
 import {
-  ArrowLeft, ChevronLeft, ChevronRight, EyeOff, ExternalLink,
-  Monitor, Pause, Plus, Trash2, Settings, Play, Volume2,
+  ArrowLeft, ArrowRight, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, EyeOff, ExternalLink,
+  Monitor, Pause, Plus, Trash2, Settings, Play, Volume2, Maximize2, Cast,
   Search, ChevronUp, ChevronDown, X as XIcon, Lightbulb, Radio, MessageSquare,
 } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -540,28 +540,33 @@ export function ControlPage() {
               })()}
 
               {/* Broadcast + fullscreen toggles */}
-              <div className="px-4 py-2 border-t border-slate-800 flex items-center justify-between gap-3">
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={broadcastEnabled}
-                    onChange={(e) => setBroadcastEnabled(e.target.checked)}
-                    className="accent-brand-500"
-                  />
-                  <span className="text-xs text-slate-300">Show on projectors</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={allFullscreen}
-                    onChange={(e) => {
-                      setAllFullscreen(e.target.checked)
-                      busRef.current?.send({ kind: 'projector.fullscreen', payload: { on: e.target.checked } })
-                    }}
-                    className="accent-brand-500"
-                  />
-                  <span className="text-xs text-slate-300">All fullscreen</span>
-                </label>
+              <div className="px-4 py-2 border-t border-slate-800 flex items-center gap-2">
+                <button
+                  onClick={() => setBroadcastEnabled(v => !v)}
+                  title={broadcastEnabled ? 'Broadcasting to projectors' : 'Not broadcasting'}
+                  className={clsx(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                    broadcastEnabled ? 'bg-brand-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700',
+                  )}
+                >
+                  <Cast size={13} />
+                  Projectors
+                </button>
+                <button
+                  onClick={() => {
+                    const next = !allFullscreen
+                    setAllFullscreen(next)
+                    busRef.current?.send({ kind: 'projector.fullscreen', payload: { on: next } })
+                  }}
+                  title={allFullscreen ? 'Exit fullscreen' : 'All fullscreen'}
+                  className={clsx(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                    allFullscreen ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700',
+                  )}
+                >
+                  <Maximize2 size={13} />
+                  Fullscreen
+                </button>
               </div>
               {!broadcastEnabled && (
                 <div className="px-4 pb-2 -mt-1">
@@ -730,7 +735,17 @@ export function ControlPage() {
                   </div>
 
                   <div>
-                    <span className="text-xs text-slate-400 block mb-1">Horizontal</span>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-slate-400">Horizontal</span>
+                      <div className="flex items-center gap-0.5">
+                        <button onClick={() => updateWindowStyle(editingWindow.id, { offsetX: (editingWindow.style.offsetX ?? 0) - 1 })} className="p-0.5 rounded text-slate-400 hover:text-white hover:bg-slate-700 transition-colors" title="Nudge left 1px"><ArrowLeft size={11} /></button>
+                        <span className="text-xs text-slate-500 tabular-nums w-8 text-center">{editingWindow.style.offsetX ?? 0}px</span>
+                        <button onClick={() => updateWindowStyle(editingWindow.id, { offsetX: (editingWindow.style.offsetX ?? 0) + 1 })} className="p-0.5 rounded text-slate-400 hover:text-white hover:bg-slate-700 transition-colors" title="Nudge right 1px"><ArrowRight size={11} /></button>
+                        {(editingWindow.style.offsetX ?? 0) !== 0 && (
+                          <button onClick={() => updateWindowStyle(editingWindow.id, { offsetX: 0 })} className="ml-0.5 text-xs text-slate-600 hover:text-slate-300 transition-colors" title="Reset">↺</button>
+                        )}
+                      </div>
+                    </div>
                     <div className="flex gap-1">
                       {(['left', 'center', 'right'] as const).map((a) => (
                         <button key={a}
@@ -743,7 +758,17 @@ export function ControlPage() {
                   </div>
 
                   <div>
-                    <span className="text-xs text-slate-400 block mb-1">Vertical</span>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-slate-400">Vertical</span>
+                      <div className="flex items-center gap-0.5">
+                        <button onClick={() => updateWindowStyle(editingWindow.id, { offsetY: (editingWindow.style.offsetY ?? 0) - 1 })} className="p-0.5 rounded text-slate-400 hover:text-white hover:bg-slate-700 transition-colors" title="Nudge up 1px"><ArrowUp size={11} /></button>
+                        <span className="text-xs text-slate-500 tabular-nums w-8 text-center">{editingWindow.style.offsetY ?? 0}px</span>
+                        <button onClick={() => updateWindowStyle(editingWindow.id, { offsetY: (editingWindow.style.offsetY ?? 0) + 1 })} className="p-0.5 rounded text-slate-400 hover:text-white hover:bg-slate-700 transition-colors" title="Nudge down 1px"><ArrowDown size={11} /></button>
+                        {(editingWindow.style.offsetY ?? 0) !== 0 && (
+                          <button onClick={() => updateWindowStyle(editingWindow.id, { offsetY: 0 })} className="ml-0.5 text-xs text-slate-600 hover:text-slate-300 transition-colors" title="Reset">↺</button>
+                        )}
+                      </div>
+                    </div>
                     <div className="flex gap-1">
                       {(['top', 'center', 'bottom'] as const).map((a) => (
                         <button key={a}
