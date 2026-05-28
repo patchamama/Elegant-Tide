@@ -2,6 +2,9 @@ import { useEffect } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@elegant-tide/db'
 import { useAuthStore } from '@/stores/useAuthStore'
+import { startSyncWorker } from '@elegant-tide/sync'
+
+let syncStarted = false
 
 function getDeviceId(): string {
   let id = localStorage.getItem('elegant-tide:deviceId')
@@ -29,6 +32,7 @@ export function useAuth() {
         if (me.ok) {
           const data = await me.json() as { id: string; email: string; displayName: string; avatarUrl?: string; isAnonymous: boolean }
           setUser(data)
+          startSync(base)
           syncSettings(base)
           return
         }
@@ -43,6 +47,7 @@ export function useAuth() {
         if (anon.ok) {
           const data = await anon.json() as { user: { id: string; email: string; displayName: string; isAnonymous: boolean } }
           setUser({ ...data.user, isAnonymous: true })
+          startSync(base)
           syncSettings(base)
         }
       } catch {
@@ -57,6 +62,12 @@ export function useAuth() {
   }, [config?.backendUrl]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return { user, isLoading, initialized }
+}
+
+function startSync(backendUrl: string) {
+  if (syncStarted) return
+  syncStarted = true
+  startSyncWorker({ backendUrl })
 }
 
 async function syncSettings(base: string) {

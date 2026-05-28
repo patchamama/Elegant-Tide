@@ -7,6 +7,7 @@ const DEFAULTS: AppConfig = {
   id: SINGLETON_ID,
   locale: 'en',
   theme: 'system',
+  backendUrl: import.meta.env?.['VITE_BACKEND_URL'] ?? 'http://localhost:3099',
 }
 
 export const appConfigRepo = {

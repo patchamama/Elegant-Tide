@@ -53,7 +53,7 @@ JWT_SECRET="change-me-min-32-chars-long-secret-1234567890ab"
 JWT_REFRESH_SECRET="change-me-too-min-32-chars-long-secret-67890cdef"
 
 # ─── Server ────────────────────────────────────────────────────────────────────
-PORT=3001
+PORT=3099
 NODE_ENV=development
 CORS_ORIGIN=http://localhost:5173
 
@@ -139,6 +139,6 @@ pnpm exec prisma db push --skip-generate --accept-data-loss \
 
 # ── Start API server ───────────────────────────────────────────────────────────
 echo ""
-printf "  ${BOLD}Starting Fastify API on port ${PORT:-3001}…${RESET}\n"
+printf "  ${BOLD}Starting Fastify API on port ${PORT:-3099}…${RESET}\n"
 echo ""
 pnpm dev

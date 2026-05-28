@@ -330,10 +330,10 @@ export function ProjectorPage() {
           className="absolute inset-x-0 flex justify-center px-8"
           style={
             (style.verticalAlign ?? 'center') === 'top'
-              ? { top: `calc(2rem + ${style.offsetY ?? 0}px)`, marginLeft: `${style.offsetX ?? 0}px` }
+              ? { top: `calc(2rem + ${style.offsetY ?? 0}px)`, transform: `translateX(${style.offsetX ?? 0}px)` }
               : (style.verticalAlign ?? 'center') === 'bottom'
-              ? { bottom: `calc(3rem - ${style.offsetY ?? 0}px)`, marginLeft: `${style.offsetX ?? 0}px` }
-              : { top: '50%', transform: `translateY(calc(-50% + ${style.offsetY ?? 0}px))`, marginLeft: `${style.offsetX ?? 0}px` }
+              ? { bottom: `calc(3rem - ${style.offsetY ?? 0}px)`, transform: `translateX(${style.offsetX ?? 0}px)` }
+              : { top: '50%', transform: `translate(${style.offsetX ?? 0}px, calc(-50% + ${style.offsetY ?? 0}px))` }
           }
         >
           <div

@@ -344,9 +344,16 @@ export function ControlPage() {
   const previewChannel: ProjectionChannel = windowConfigs[0]?.language ?? primaryLang
   const currentLine = (lines ?? []).find((l) => l.id === currentLineId)
   const previewText = !blackout && currentLine?.type !== 'media'
-    ? previewChannel === 'comment'
-      ? (currentLine?.comment ?? '')
-      : (currentLine?.translations[previewChannel as LangCode] ?? '')
+    ? (() => {
+        if (previewChannel === 'comment') return currentLine?.comment ?? ''
+        const configured = currentLine?.translations[previewChannel as LangCode] ?? ''
+        if (configured) return configured
+        // fallback: first language that has text
+        const fallbackLang = project.languages.find(
+          (lang) => currentLine?.translations[lang as LangCode],
+        )
+        return fallbackLang ? (currentLine?.translations[fallbackLang as LangCode] ?? '') : ''
+      })()
     : ''
 
   const subtitleCount = lines?.filter(l => l.type === 'subtitle').length ?? 0

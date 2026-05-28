@@ -16,7 +16,7 @@ function withDefault(key: string, devDefault: string): string {
 }
 
 export const env = {
-  PORT: parseInt(process.env['PORT'] ?? '3001', 10),
+  PORT: parseInt(process.env['PORT'] ?? '3099', 10),
   DATABASE_URL: withDefault('DATABASE_URL', 'file:./prisma/dev.db'),
   JWT_SECRET: required('JWT_SECRET'),
   JWT_REFRESH_SECRET: required('JWT_REFRESH_SECRET'),
